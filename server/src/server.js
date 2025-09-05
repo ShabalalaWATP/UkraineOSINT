@@ -138,6 +138,16 @@ const server = app.listen(PORT, HOST, () => {
   console.log(`OSINT server listening on http://${HOST}:${PORT} (env: ${process.env.NODE_ENV || 'development'})`);
 });
 
+// Relax server timeouts to accommodate longer LLM runs
+try {
+  // Time to receive the entire request (headers+body)
+  server.requestTimeout = 10 * 60 * 1000; // 10 minutes
+  // Time allowed for headers to be sent
+  server.headersTimeout = 11 * 60 * 1000; // 11 minutes
+  // Keep-alive between requests on the same connection
+  server.keepAliveTimeout = 2 * 60 * 1000; // 2 minutes
+} catch {}
+
 // Extra safety: surface listen errors clearly
 server.on('error', (err) => {
   console.error('HTTP server error:', err);

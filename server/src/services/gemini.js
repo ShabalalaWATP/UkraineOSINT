@@ -23,25 +23,33 @@ function chunkArticles(articles, maxCharsPerChunk = 12000, maxDocs = 60) {
 function buildOsintStructuredPrompt({ start, end, q, focus }) {
   const header = `You are an OSINT analyst producing a decision-ready report on the Ukraine war.`;
   const scope = `Timeframe: ${start} to ${end}. Topic: ${q}.`;
-  const intent = focus && focus.trim()
-    ? `Analyst priorities (focus): ${focus.trim()}`
-    : `Analyst priorities (focus): operational changes, strikes, cross-border effects, aid/logistics, diplomacy/sanctions, domestic developments, cyber/info ops.`;
+  const focusText = (focus && focus.trim())
+    ? focus.trim()
+    : 'operational changes, strikes, cross-border effects, aid/logistics, diplomacy/sanctions, domestic developments, cyber/info ops.';
+  const intent = `Analyst priorities (focus): ${focusText}`;
   const format = `Return Markdown only with the following sections in order:
 
 1) Executive Summary
 - 5–8 bullets with bottom-line-up-front and significance.
 
 2) Key Events (Bullets)
-- Each: YYYY-MM-DD — concise event — citations [#n][#m].
+- Each: DD Mon YYYY — concise event — citations [#n][#m].
 
 3) Timeline (Chronological)
-- 10–20 entries, YYYY-MM-DD — event — citations.
+- 10–20 entries, DD Mon YYYY — event — citations.
 
 4) Thematic Analysis
 - Operations (fronts/axes), Strikes, Diplomacy, Aid & Logistics, Domestic (RU/UA), Cyber/InfoOps, Economy/Energy.
 
 5) Claims and Corroboration
-- For each notable claim: Claim; Who asserts; Corroboration level (single-source / multi-source / contested); Assessment; Citations.
+- For each notable claim, use this mini-structure (one block per claim):
+  - Claim: <one sentence>
+  - Who asserts: <outlet/person>
+  - Evidence: \`Single-source\` | \`Multi-source\` | \`Contested\`
+  - Sources: <N> • Outlets: <M>
+  - Assessment: <1–2 sentences>
+  - Likelihood (UK MI yardstick): \`Almost certain (90–100%)\` | \`Highly likely (80–90%)\` | \`Likely (55–75%)\` | \`About as likely as not (40–60%)\` | \`Unlikely (20–45%)\` | \`Highly unlikely (10–20%)\` | \`Remote (0–10%)\`
+  - Citations: [#n][#m]
 
 6) Outliers & Disinfo
 - What, why it’s questionable, likely impact, citations.
@@ -60,9 +68,11 @@ function buildOsintStructuredPrompt({ start, end, q, focus }) {
 - Prefer cross-source corroboration; note contradictions explicitly.
 - If insufficient evidence, say so.
 - Keep language concise and analytical; avoid rhetorical flourish.
-- Use proper names and locations; dates as YYYY-MM-DD.
-- Total length target: ~1200–1500 words.`;
-  return `${header}\n\n${scope}\n${intent}\n\n${format}\n\n${rules}`;
+ - Use proper names and locations; dates as DD Mon YYYY (UK).
+ - Use inline badges in backticks for Evidence and Likelihood as shown.
+ - Total length target: ~1200–1500 words.`;
+  const focusDirective = `Focus directive: prioritize coverage of the analyst focus above when selecting events, structuring themes, and writing the Executive Summary. Explicitly reference focus items where applicable.`;
+  return `${header}\n\n${scope}\n${intent}\n\n${focusDirective}\n\n${format}\n\n${rules}`;
 }
 
 async function analyzeWithGemini({ start, end, q, focus = '', promptPreset = 'osint_structured_v1', articles, model = 'gemini-1.5-flash', maxDocs = 60 }) {
@@ -82,7 +92,7 @@ async function analyzeWithGemini({ start, end, q, focus = '', promptPreset = 'os
     const parts = [];
     for (let i = 0; i < chunks.length; i++) {
       const prefix = chunks.length > 1 ? `Part ${i + 1}/${chunks.length}. ` : '';
-      const instructions = `${prefix}You will receive a subset of the documents with IDs. Read and produce partial analysis notes that strictly follow the requested structure and include inline citations [#n]. Do not repeat the full documents.`;
+      const instructions = `${prefix}You will receive a subset of the documents with IDs. Read and produce partial analysis notes that strictly follow the requested structure and include inline citations [#n]. Do not repeat the full documents.\n\nAnalyst focus: ${focus || '(none provided)'}\nIn your notes, prioritize items relevant to the focus and explicitly mention them where appropriate.\nFor each claim, include: an Evidence badge (\`Single-source\`/\`Multi-source\`/\`Contested\`), Sources & Outlets counts, and a Likelihood using the UK MI yardstick terms.`;
       const user = `Documents:\n\n${chunks[i]}`;
       const res = await client.generateContent([{ text: system }, { text: instructions }, { text: user }]);
       const text = res?.response?.text?.() || '';
@@ -92,7 +102,7 @@ async function analyzeWithGemini({ start, end, q, focus = '', promptPreset = 'os
     if (parts.length > 1) {
       const res = await client.generateContent([
         { text: system },
-        { text: 'Synthesize the partial analyses into ONE cohesive report following the exact section ordering and formatting rules. Merge and deduplicate content; keep inline citations [#n] intact and comprehensive.' },
+        { text: `Synthesize the partial analyses into ONE cohesive report following the exact section ordering and formatting rules. Merge and deduplicate content; keep inline citations [#n] intact and comprehensive. Ensure the analyst focus is clearly addressed throughout (especially in the Executive Summary and Thematic Analysis). For Claims and Corroboration, make sure each claim shows: Evidence badge, Sources & Outlets counts, and Likelihood using the UK MI yardstick. Analyst focus: ${focus || '(none provided)'}` },
         { text: synthesis },
       ]);
       synthesis = res?.response?.text?.() || synthesis;

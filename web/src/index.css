@@ -151,7 +151,7 @@
 .markdown ol { list-style: decimal; margin-left: 1.25rem; padding-left: 0.5rem; }
 .markdown li { margin: 0.25rem 0; }
 .markdown a { color: #93c5fd; text-decoration: underline; }
-.markdown code { background: #0a0a0a; padding: 0.1rem 0.3rem; border-radius: 4px; }
+.markdown code { background: #0a0a0a; padding: 0.12rem 0.4rem; border-radius: 9999px; border: 1px solid rgba(0,176,255,0.35); color: #e5e7eb; font-weight: 500; }
 .markdown pre { background: #0a0a0a; padding: 0.75rem; border-radius: 8px; overflow: auto; border: 1px solid #1f2937; }
 .markdown blockquote { border-left: 3px solid rgba(0,176,255,0.45); padding-left: 0.75rem; color: #cbd5e1; }
 .citations-list { font-size: 0.85rem; color: #9ca3af; }
@@ -243,3 +243,13 @@
   .ua-sides::before { left: -24px; transform: scaleX(-1); }
   .ua-sides::after { right: -24px; }
 }
+
+/* Timeline histogram */
+.timeline { display:flex; align-items:flex-end; height: 72px; gap: 2px; padding: 6px; border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; background: rgba(255,255,255,0.02); position: relative; }
+.timeline::before {
+  content: ""; position: absolute; inset: 6px 6px 6px 6px; pointer-events: none;
+  background-image: linear-gradient(to top, rgba(255,255,255,0.06) 1px, transparent 1px);
+  background-size: 100% 18px; border-radius: 6px;
+}
+.timeline .bar { flex: 1 1 0; min-width: 2px; background: linear-gradient(180deg, rgba(0,176,255,0.9), rgba(255,213,0,0.85)); border-radius: 3px 3px 0 0; opacity: 0.9; }
+.timeline .bar:hover { filter: brightness(1.1); opacity: 1; }

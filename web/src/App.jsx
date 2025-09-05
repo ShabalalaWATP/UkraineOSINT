@@ -33,6 +33,11 @@ const QUERY_PRESETS = [
 ]
 
 export default function App() {
+  // Persisted UI state key
+  const LS_KEY = 'osint_ui_state_v1'
+  const initRef = useRef(false)
+  const syncTimerRef = useRef(null)
+
   const [start, setStart] = useState(defaultStart)
   const [end, setEnd] = useState(defaultEnd)
   const [q, setQ] = useState('Ukraine')
@@ -52,6 +57,14 @@ export default function App() {
   const [analyzedDocs, setAnalyzedDocs] = useState([])
   const [copied, setCopied] = useState(false)
   const [toasts, setToasts] = useState([])
+  const [shareCopied, setShareCopied] = useState(false)
+  const [mdSaved, setMdSaved] = useState(false)
+  const [docxSaved, setDocxSaved] = useState(false)
+  const [htmlSaved, setHtmlSaved] = useState(false)
+  const [pdfOpened, setPdfOpened] = useState(false)
+  const [jsonSaved, setJsonSaved] = useState(false)
+  const [csvArticlesSaved, setCsvArticlesSaved] = useState(false)
+  const [csvAnalyzedSaved, setCsvAnalyzedSaved] = useState(false)
   const reportRef = useRef(null)
   const keywordRef = useRef(null)
   const headerRef = useRef(null)
@@ -83,6 +96,127 @@ export default function App() {
     }
     return out
   }, [analysis?.report])
+
+  // Utility: YYYY-MM-DD from date-like value (UTC)
+  function ymd(d) {
+    try { return new Date(d).toISOString().slice(0,10) } catch { return '' }
+  }
+
+  // Build timeline bins (articles per day)
+  const timelineDays = useMemo(() => {
+    if (!start || !end) return []
+    const startD = new Date(`${start}T00:00:00Z`)
+    const endD = new Date(`${end}T00:00:00Z`)
+    if (!(startD instanceof Date) || isNaN(startD) || !(endD instanceof Date) || isNaN(endD)) return []
+    const days = []
+    for (let d = new Date(startD); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
+      days.push(d.toISOString().slice(0,10))
+    }
+    const counts = Object.create(null)
+    for (const a of articles) {
+      const k = ymd(a.published_at)
+      if (!k) continue
+      counts[k] = (counts[k] || 0) + 1
+    }
+    return days.map(date => ({ date, count: counts[date] || 0 }))
+  }, [articles, start, end])
+
+  const timelineMax = useMemo(() => Math.max(1, ...timelineDays.map(d => d.count)), [timelineDays])
+  const timelinePeak = useMemo(() => timelineDays.reduce((p,c) => c.count > (p?.count||0) ? c : p, { date: start, count: 0 }), [timelineDays, start])
+
+  // UK date formatter (DD Mon YYYY)
+  function formatUK(dateStr) {
+    if (!dateStr) return ''
+    try {
+      const d = new Date(`${dateStr}T00:00:00Z`)
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    } catch {
+      return dateStr
+    }
+  }
+
+  // Helpers: parse primitives safely
+  const toInt = (v, d) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : d
+  }
+  const toBool = (v, d) => {
+    if (v === '1' || v === 'true') return true
+    if (v === '0' || v === 'false') return false
+    return d
+  }
+
+  // On mount: hydrate from URL, then localStorage for any missing
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search || '')
+      const urlPatch = {}
+      if (params.get('start')) urlPatch.start = params.get('start')
+      if (params.get('end')) urlPatch.end = params.get('end')
+      if (params.get('q')) urlPatch.q = params.get('q')
+      if (params.get('sources')) urlPatch.sources = params.get('sources').split(',').filter(Boolean)
+      if (params.get('model')) urlPatch.model = params.get('model')
+      if (params.get('preset')) urlPatch.preset = params.get('preset')
+      if (params.get('focus')) urlPatch.focus = params.get('focus')
+      if (params.get('docLimit')) urlPatch.docLimit = toInt(params.get('docLimit'), 30)
+      if (params.get('showLimit')) urlPatch.showLimit = toInt(params.get('showLimit'), 60)
+      if (params.get('analysisOnTop')) urlPatch.analysisOnTop = toBool(params.get('analysisOnTop'), true)
+
+      const ls = localStorage.getItem(LS_KEY)
+      const saved = ls ? JSON.parse(ls) : null
+      const patch = { ...(saved || {}), ...urlPatch } // URL wins
+
+      if (patch.start) setStart(patch.start)
+      if (patch.end) setEnd(patch.end)
+      if (typeof patch.q === 'string') setQ(patch.q)
+      if (Array.isArray(patch.sources) && patch.sources.length) setSources(patch.sources)
+      if (typeof patch.model === 'string') setModel(patch.model)
+      if (typeof patch.preset === 'string') setPreset(patch.preset)
+      if (typeof patch.focus === 'string') setFocus(patch.focus)
+      if (typeof patch.docLimit !== 'undefined') setDocLimit(patch.docLimit)
+      if (typeof patch.showLimit !== 'undefined') setShowLimit(patch.showLimit)
+      if (typeof patch.analysisOnTop === 'boolean') setAnalysisOnTop(patch.analysisOnTop)
+    } catch {}
+    finally {
+      initRef.current = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Sync key UI state to URL + localStorage (debounced)
+  useEffect(() => {
+    if (!initRef.current) return
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
+    syncTimerRef.current = setTimeout(() => {
+      try {
+        // Persist to localStorage
+        const state = { start, end, q, sources, model, preset, focus, docLimit, showLimit, analysisOnTop }
+        localStorage.setItem(LS_KEY, JSON.stringify(state))
+
+        // Build query string (avoid noise by omitting defaults where possible)
+        const params = new URLSearchParams()
+        if (start) params.set('start', start)
+        if (end) params.set('end', end)
+        if (q) params.set('q', q)
+        const allSrc = SOURCE_KEYS.map(s => s.id)
+        const isAll = sources.length === allSrc.length && allSrc.every(s => sources.includes(s))
+        if (!isAll) params.set('sources', sources.join(','))
+        if (model && model !== 'gemini-2.5-flash') params.set('model', model)
+        if (preset && preset !== 'osint_structured_v1') params.set('preset', preset)
+        if (focus && focus !== defaultFocus) params.set('focus', focus)
+        if (docLimit !== 30) params.set('docLimit', String(docLimit))
+        if (showLimit !== 60) params.set('showLimit', String(showLimit))
+        if (analysisOnTop !== true) params.set('analysisOnTop', analysisOnTop ? '1' : '0')
+
+        const qs = params.toString()
+        const newUrl = qs ? (`?${qs}`) : ''
+        const loc = window.location
+        const finalUrl = loc.pathname + newUrl + loc.hash
+        window.history.replaceState(null, '', finalUrl)
+      } catch {}
+    }, 250)
+    return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current) }
+  }, [start, end, q, sources, model, preset, focus, docLimit, showLimit, analysisOnTop])
 
   // Section navigation helpers
   // Recompute offsets based on header + actions bar heights
@@ -159,7 +293,8 @@ export default function App() {
       if (k === 'a') { runAnalysis(); return }
       if (k === 'r') { resetAll(); return }
       if (k === 'c') { clearOutput(); return }
-      if (k === '?') { pushToast('Shortcuts: F=Fetch • A=Analyze • /=Focus • R=Reset • C=Clear • M=.md • D=.docx • H=HTML • P=Print • J=JSON', 'success'); return }
+      if (k === '?') { pushToast('Shortcuts: F=Fetch • A=Analyze • /=Focus • R=Reset • C=Clear • U=URL • M=.md • D=.docx • H=HTML • P=Print • J=JSON', 'success'); return }
+      if (k === 'u') { copyShareLink(); return }
       if (!analysis) return
       if (k === 'm') { downloadReport(); return }
       if (k === 'd') { downloadDOCX(); return }
@@ -185,6 +320,12 @@ export default function App() {
         throw new Error(data?.error || `HTTP ${res.status}`)
       }
       return data
+    } catch (e) {
+      if (e?.name === 'AbortError') {
+        const secs = Math.round(timeoutMs / 1000)
+        throw new Error(`Request timed out after ${secs}s`)
+      }
+      throw e
     } finally {
       clearTimeout(to)
     }
@@ -220,7 +361,8 @@ export default function App() {
     try {
       const toAnalyze = articles.slice(0, Math.max(5, Math.min(120, Number(docLimit) || 40)))
       const payload = { start, end, q, model, promptPreset: preset, focus, maxDocs: toAnalyze.length, articles: toAnalyze }
-      const j = await fetchJSON('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 90000)
+      // Increase timeout to 5 minutes for large analyses / slower models
+      const j = await fetchJSON('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 300000)
       setAnalysis(j.analysis)
       setAnalyzedDocs(toAnalyze)
       pushToast('Analysis completed', 'success')
@@ -336,6 +478,7 @@ export default function App() {
       `# OSINT Report: ${q || 'Ukraine'} (${start} → ${end})`,
       `- Model: ${analysis.model}${analysis.fallback ? ' (fallback used)' : ''}`,
       `- Documents analyzed: ${analyzedDocs.length}`,
+      `- Focus: ${focus ? focus : '(none)'}`,
       `- Generated: ${new Date().toISOString()}`,
       ''
     ].join('\n')
@@ -383,15 +526,37 @@ export default function App() {
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
+      setMdSaved(true); setTimeout(() => setMdSaved(false), 1500)
     } catch (e) {
       setError('Download failed: ' + e.message)
+    }
+  }
+
+  function copyShareLink() {
+    try {
+      const href = window.location.href
+      navigator.clipboard.writeText(href)
+        .then(() => { setShareCopied(true); setTimeout(() => setShareCopied(false), 1500); pushToast('Share link copied to clipboard', 'success') })
+        .catch(() => {
+          // Fallback for older browsers
+          const input = document.createElement('input')
+          input.value = href
+          document.body.appendChild(input)
+          input.select()
+          document.execCommand('copy')
+          input.remove()
+          setShareCopied(true); setTimeout(() => setShareCopied(false), 1500); pushToast('Share link copied to clipboard', 'success')
+        })
+    } catch (e) {
+      setError('Copy link failed: ' + e.message)
+      pushToast('Copy link failed: ' + e.message, 'error')
     }
   }
 
   function buildExportHTML() {
     const inner = reportRef.current ? reportRef.current.innerHTML : '<p>No content</p>'
     const cites = analyzedDocs.length > 0
-      ? `<section class="citations-list"><h2>Sources Cited</h2><ul>${analyzedDocs.map((d, i) => `<li>[#${i+1}] <a href="${d.url}">${(d.title || d.url).replace(/</g,'&lt;')}</a></li>`).join('')}</ul></section>`
+      ? `<section class="citations-list"><h2>Sources Cited</h2><ul>${analyzedDocs.map((d, i) => `<li id="cite-${i+1}">[#${i+1}] <a href="${d.url}">${(d.title || d.url).replace(/</g,'&lt;')}</a></li>`).join('')}</ul></section>`
       : ''
     const title = `OSINT Report: ${q || 'Ukraine'} (${start} → ${end})`
     const css = `
@@ -419,7 +584,7 @@ export default function App() {
     return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title}</title><style>${css}</style></head><body>
       <header>
         <div class="title">Ukraine OSINT Aggregator — Report</div>
-        <div class="meta">${title}<br/>Model: ${analysis?.model || ''}${analysis?.fallback ? ' (fallback used)' : ''} · Documents: ${analyzedDocs.length} · Generated: ${new Date().toISOString()}</div>
+        <div class="meta">${title}<br/>Model: ${analysis?.model || ''}${analysis?.fallback ? ' (fallback used)' : ''} · Documents: ${analyzedDocs.length} · Generated: ${new Date().toISOString()} · Focus: ${(focus || '(none)').replace(/</g,'&lt;')}</div>
       </header>
       <main>
         <section class="markdown">${inner}</section>
@@ -441,6 +606,7 @@ export default function App() {
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
+      setHtmlSaved(true); setTimeout(() => setHtmlSaved(false), 1500)
     } catch (e) {
       setError('HTML export failed: ' + e.message)
     }
@@ -457,6 +623,7 @@ export default function App() {
       w.focus()
       // Give the browser a moment to layout before printing
       setTimeout(() => { try { w.print(); } catch {} }, 300)
+      setPdfOpened(true); setTimeout(() => setPdfOpened(false), 1500)
     } catch (e) {
       setError('Print failed: ' + e.message)
     }
@@ -522,6 +689,7 @@ export default function App() {
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
+      setDocxSaved(true); setTimeout(() => setDocxSaved(false), 1500)
     } catch (e) {
       setError('DOCX export failed: ' + e.message)
     }
@@ -551,6 +719,7 @@ export default function App() {
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
+      setJsonSaved(true); setTimeout(() => setJsonSaved(false), 1500)
     } catch (e) {
       setError('JSON export failed: ' + e.message)
     }
@@ -602,7 +771,7 @@ export default function App() {
                 className="icon-btn"
                 aria-label="Keyboard shortcuts"
                 title="Keyboard shortcuts"
-                onClick={() => pushToast('Shortcuts: F=Fetch • A=Analyze • /=Focus • R=Reset • C=Clear • M=.md • D=.docx • H=HTML • P=Print • J=JSON', 'success')}
+                onClick={() => pushToast('Shortcuts: F=Fetch • A=Analyze • /=Focus • R=Reset • C=Clear • U=URL • M=.md • D=.docx • H=HTML • P=Print • J=JSON', 'success')}
               >
                 <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm.88 14.76h-1.76v-1.76h1.76v1.76zM12 13.2a.88.88 0 01-.88-.88V7.52h1.76v4.8c0 .49-.39.88-.88.88z"/></svg>
               </button>
@@ -740,6 +909,14 @@ export default function App() {
             <button
               className="btn-outline"
               type="button"
+              title="Copy a shareable link with your current settings"
+              onClick={copyShareLink}
+            >
+              {shareCopied ? 'Copied!' : 'Share Link'}
+            </button>
+            <button
+              className="btn-outline"
+              type="button"
               title="Fetch full article text for the first N results (based on Docs to Analyze) to enrich analysis with better excerpts."
               onClick={extractForTopN}
               disabled={!articles.length || loadingFetch || loadingAnalyze || enriching}
@@ -753,12 +930,50 @@ export default function App() {
                 <button className="btn-xs" onClick={stopEnrich}>Stop</button>
               </div>
             )}
-            <button className="btn-outline" type="button" onClick={() => downloadCSV(articles, 'articles')} disabled={!articles.length}>Download CSV (Articles)</button>
-            <button className="btn-outline" type="button" onClick={() => downloadCSV(analyzedDocs, 'analyzed')} disabled={!analyzedDocs.length}>Download CSV (Analyzed)</button>
+            <button
+              className="btn-outline"
+              type="button"
+              onClick={() => { downloadCSV(articles, 'articles'); setCsvArticlesSaved(true); setTimeout(()=>setCsvArticlesSaved(false), 1500) }}
+              disabled={!articles.length}
+            >
+              {csvArticlesSaved ? 'Saved!' : 'Download CSV (Articles)'}
+            </button>
+            <button
+              className="btn-outline"
+              type="button"
+              onClick={() => { downloadCSV(analyzedDocs, 'analyzed'); setCsvAnalyzedSaved(true); setTimeout(()=>setCsvAnalyzedSaved(false), 1500) }}
+              disabled={!analyzedDocs.length}
+            >
+              {csvAnalyzedSaved ? 'Saved!' : 'Download CSV (Analyzed)'}
+            </button>
           </div>
           {stats && (
             <div className="mt-2 text-xs text-neutral-500">
               Source stats: {stats.map(s => `${s.source}(${s.count}${s.error ? ' err' : ''}, ${s.ms}ms)`).join(' · ')}
+            </div>
+          )}
+          {/* Timeline visual */}
+          {timelineDays.length > 0 && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between text-xs text-neutral-400 mb-1">
+                <span>Timeline (articles per day)</span>
+                <span>{formatUK(timelinePeak?.date)} — {timelinePeak?.count || 0} articles</span>
+              </div>
+              <div className="timeline" role="img" aria-label="Articles per day">
+                {timelineDays.map((d, i) => (
+                  <div
+                    key={d.date + i}
+                    className="bar"
+                    title={`${formatUK(d.date)} — ${d.count} ${d.count===1?'article':'articles'}`}
+                    style={{ height: `${Math.round((d.count / timelineMax) * 100)}%` }}
+                  />
+                ))}
+              </div>
+              <div className="flex justify-between text-[10px] text-neutral-500 mt-1">
+                <span>{formatUK(timelineDays[0]?.date)}</span>
+                <span>{formatUK(timelineDays[Math.floor(timelineDays.length/2)]?.date)}</span>
+                <span>{formatUK(timelineDays[timelineDays.length - 1]?.date)}</span>
+              </div>
             </div>
           )}
           {error && <div className="mt-3 text-red-400">{error}</div>}
@@ -780,14 +995,14 @@ export default function App() {
             )}
             {analysis && (
               <div className="max-w-none">
-                <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''}</div>
+                <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''} · Focus: {(focus || '(none)')}</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button className="btn-outline" onClick={copyReport}>{copied ? 'Copied!' : 'Copy Markdown'}</button>
-                  <button className="btn-outline" onClick={downloadReport}>Download .md</button>
-                  <button className="btn-outline" onClick={downloadDOCX}>Download .docx</button>
-                  <button className="btn-outline" onClick={downloadHTML}>Download HTML</button>
-                  <button className="btn-outline" onClick={printPDF}>Print to PDF</button>
-                  <button className="btn-outline" onClick={downloadJSON}>Export JSON</button>
+                  <button className="btn-outline" onClick={downloadReport}>{mdSaved ? 'Saved!' : 'Download .md'}</button>
+                  <button className="btn-outline" onClick={downloadDOCX}>{docxSaved ? 'Saved!' : 'Download .docx'}</button>
+                  <button className="btn-outline" onClick={downloadHTML}>{htmlSaved ? 'Saved!' : 'Download HTML'}</button>
+                  <button className="btn-outline" onClick={printPDF}>{pdfOpened ? 'Opened' : 'Print to PDF'}</button>
+                  <button className="btn-outline" onClick={downloadJSON}>{jsonSaved ? 'Saved!' : 'Export JSON'}</button>
                 </div>
                 <div className="mt-2 flex items-center gap-2 flex-wrap">
                   {toc.length > 0 && (
@@ -815,9 +1030,16 @@ export default function App() {
                       h1: ({node, ...props}) => { const txt = String(props.children).replace(/[,]/g,''); const id = txt.toLowerCase().replace(/[^a-z0-9\s-]/g,'').replace(/\s+/g,'-').replace(/-+/g,'-'); return <h1 id={id} {...props} /> },
                       h2: ({node, ...props}) => { const txt = String(props.children).replace(/[,]/g,''); const id = txt.toLowerCase().replace(/[^a-z0-9\s-]/g,'').replace(/\s+/g,'-').replace(/-+/g,'-'); return <h2 id={id} {...props} /> },
                       h3: ({node, ...props}) => { const txt = String(props.children).replace(/[,]/g,''); const id = txt.toLowerCase().replace(/[^a-z0-9\s-]/g,'').replace(/\s+/g,'-').replace(/-+/g,'-'); return <h3 id={id} {...props} /> },
+                      a: ({href, ...props}) => {
+                        const h = href || ''
+                        if (h.startsWith('#')) {
+                          return <a href={h} onClick={(e)=>{ e.preventDefault(); const id=h.slice(1); const el=document.getElementById(id); if (el){ const y=el.getBoundingClientRect().top + window.pageYOffset - scrollOffset; window.scrollTo({ top:y, behavior:'smooth' }); } }} {...props} />
+                        }
+                        return <a href={h} target="_blank" rel="noreferrer" {...props} />
+                      },
                     }}
                   >
-                    {analysis.report || ''}
+                    {(analysis.report || '').replace(/\[#(\d+)\]/g, (_m, n) => `[#${n}](#cite-${n})`)}
                   </ReactMarkdown>
                 </div>
                 {analyzedDocs.length > 0 && (
@@ -825,7 +1047,7 @@ export default function App() {
                     <div className="mb-1 font-medium">Citations</div>
                     <ul className="list-disc ml-5">
                       {analyzedDocs.map((d, i) => (
-                        <li key={d.id + i}>
+                        <li key={d.id + i} id={`cite-${i+1}`}>
                           [#{i+1}] <a href={d.url} target="_blank" rel="noreferrer">{d.title || d.url}</a>
                         </li>
                       ))}
@@ -909,14 +1131,14 @@ export default function App() {
               )}
               {analysis && (
                 <div className="max-w-none lg:grid lg:grid-cols-[220px_1fr] lg:gap-4">
-                  <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''}</div>
+                  <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''} · Focus: {(focus || '(none)')}</div>
                   <div className="mt-2 flex flex-wrap gap-2 lg:col-span-2">
                     <button className="btn-outline" onClick={copyReport}>{copied ? 'Copied!' : 'Copy Markdown'}</button>
-                    <button className="btn-outline" onClick={downloadReport}>Download .md</button>
-                    <button className="btn-outline" onClick={downloadDOCX}>Download .docx</button>
-                    <button className="btn-outline" onClick={downloadHTML}>Download HTML</button>
-                    <button className="btn-outline" onClick={printPDF}>Print to PDF</button>
-                    <button className="btn-outline" onClick={downloadJSON}>Export JSON</button>
+                    <button className="btn-outline" onClick={downloadReport}>{mdSaved ? 'Saved!' : 'Download .md'}</button>
+                    <button className="btn-outline" onClick={downloadDOCX}>{docxSaved ? 'Saved!' : 'Download .docx'}</button>
+                    <button className="btn-outline" onClick={downloadHTML}>{htmlSaved ? 'Saved!' : 'Download HTML'}</button>
+                    <button className="btn-outline" onClick={printPDF}>{pdfOpened ? 'Opened' : 'Print to PDF'}</button>
+                    <button className="btn-outline" onClick={downloadJSON}>{jsonSaved ? 'Saved!' : 'Export JSON'}</button>
                   </div>
                   {toc.length > 0 && (
                     <div className={`mt-3 toc ${tocOpen ? '' : 'hidden'} lg:block lg:sticky lg:top-[120px] lg:self-start`}>
@@ -946,9 +1168,16 @@ export default function App() {
                           h1: ({node, ...props}) => { const txt = String(props.children).replace(/[,]/g,''); const id = txt.toLowerCase().replace(/[^a-z0-9\s-]/g,'').replace(/\s+/g,'-').replace(/-+/g,'-'); return <h1 id={id} {...props} /> },
                           h2: ({node, ...props}) => { const txt = String(props.children).replace(/[,]/g,''); const id = txt.toLowerCase().replace(/[^a-z0-9\s-]/g,'').replace(/\s+/g,'-').replace(/-+/g,'-'); return <h2 id={id} {...props} /> },
                           h3: ({node, ...props}) => { const txt = String(props.children).replace(/[,]/g,''); const id = txt.toLowerCase().replace(/[^a-z0-9\s-]/g,'').replace(/\s+/g,'-').replace(/-+/g,'-'); return <h3 id={id} {...props} /> },
+                          a: ({href, ...props}) => {
+                            const h = href || ''
+                            if (h.startsWith('#')) {
+                              return <a href={h} onClick={(e)=>{ e.preventDefault(); const id=h.slice(1); const el=document.getElementById(id); if (el){ const y=el.getBoundingClientRect().top + window.pageYOffset - scrollOffset; window.scrollTo({ top:y, behavior:'smooth' }); } }} {...props} />
+                            }
+                            return <a href={h} target="_blank" rel="noreferrer" {...props} />
+                          },
                         }}
                       >
-                        {analysis.report || ''}
+                        {(analysis.report || '').replace(/\[#(\d+)\]/g, (_m, n) => `[#${n}](#cite-${n})`)}
                       </ReactMarkdown>
                     </div>
                   </div>
@@ -957,7 +1186,7 @@ export default function App() {
                       <div className="mb-1 font-medium">Citations</div>
                       <ul className="list-disc ml-5">
                         {analyzedDocs.map((d, i) => (
-                          <li key={d.id + i}>
+                          <li key={d.id + i} id={`cite-${i+1}`}>
                             [#{i+1}] <a href={d.url} target="_blank" rel="noreferrer">{d.title || d.url}</a>
                           </li>
                         ))}

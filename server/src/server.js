@@ -17,7 +17,23 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = (process.env.HOST || '127.0.0.1').trim();
 
-app.use(cors());
+// Lock CORS to Firebase Hosting origins (allow no-origin for curl/Postman)
+const allowedOrigins = [
+  'https://osint-ukraine-app-2025.web.app',
+  'https://osint-ukraine-app-2025.firebaseapp.com',
+];
+const previewRegex = /^https:\/\/osint-ukraine-app-2025--.*\.web\.app$/;
+
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    if (previewRegex.test(origin)) return cb(null, true);
+    return cb(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json({ limit: '2mb' }));
 
 const SourcesEnum = z.enum(['gdelt', 'guardian', 'currents', 'newsdata', 'gnews', 'rss']);

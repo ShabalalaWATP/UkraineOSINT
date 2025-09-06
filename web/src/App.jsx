@@ -3,6 +3,10 @@ import { Document, Packer, Paragraph, HeadingLevel } from 'docx'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+// If building for static hosting, set VITE_API_BASE to your deployed API host, e.g.
+//   VITE_API_BASE = "https://your-api.onrender.com"
+const API_BASE = import.meta.env.VITE_API_BASE || ''
+
 const defaultStart = new Date(Date.now() - 6 * 24 * 3600 * 1000)
   .toISOString().slice(0, 10)
 const defaultEnd = new Date().toISOString().slice(0, 10)
@@ -314,7 +318,8 @@ export default function App() {
     const controller = new AbortController()
     const to = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      const res = await fetch(url, { ...opts, signal: controller.signal })
+      const fullUrl = (API_BASE && url.startsWith('/api')) ? (API_BASE.replace(/\/$/, '') + url) : url
+      const res = await fetch(fullUrl, { ...opts, signal: controller.signal })
       const data = await res.json()
       if (!res.ok || data?.ok === false) {
         throw new Error(data?.error || `HTTP ${res.status}`)

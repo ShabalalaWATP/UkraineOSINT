@@ -140,6 +140,10 @@ export default function App() {
 
   const timelineMax = useMemo(() => Math.max(1, ...timelineDays.map(d => d.count)), [timelineDays])
   const timelinePeak = useMemo(() => timelineDays.reduce((p,c) => c.count > (p?.count||0) ? c : p, { date: start, count: 0 }), [timelineDays, start])
+  const [selectedDate, setSelectedDate] = useState(null)
+  const [showClaimsTable, setShowClaimsTable] = useState(true)
+  const [showFocusMap, setShowFocusMap] = useState(true)
+  const [showYardstick, setShowYardstick] = useState(true)
 
   // UK date formatter (DD Mon YYYY)
   function formatUK(dateStr) {
@@ -151,6 +155,107 @@ export default function App() {
       return dateStr
     }
   }
+
+  // Filtered articles by selected timeline date (if any)
+  const visibleArticles = useMemo(() => {
+    if (!selectedDate) return articles
+    const y = selectedDate
+    return articles.filter(a => ymd(a.published_at) === y)
+  }, [articles, selectedDate])
+
+  function toggleTimelineDate(d) {
+    setSelectedDate(prev => prev === d ? null : d)
+  }
+
+  function scrollToKeyEvents() {
+    const hit = toc.find(h => /key\s*events/i.test(h.text))
+    if (!hit) return
+    const el = document.getElementById(hit.id)
+    if (!el) return
+    const y = el.getBoundingClientRect().top + window.pageYOffset - scrollOffset
+    window.scrollTo({ top: y, behavior: 'smooth' })
+  }
+
+  // Parse Claims & Corroboration section into a table
+  function extractSection(md, titleRegex) {
+    if (!md) return ''
+    const lines = md.split(/\r?\n/)
+    let startIdx = -1
+    let startDepth = 0
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/^(#{1,6})\s+(.*)$/)
+      if (m) {
+        const depth = m[1].length
+        const title = m[2].trim()
+        if (titleRegex.test(title)) { startIdx = i + 1; startDepth = depth; break }
+      }
+    }
+    if (startIdx < 0) return ''
+    const out = []
+    for (let i = startIdx; i < lines.length; i++) {
+      const m = lines[i].match(/^(#{1,6})\s+(.*)$/)
+      if (m) {
+        const depth = m[1].length
+        if (depth <= startDepth) break
+      }
+      out.push(lines[i])
+    }
+    return out.join('\n').trim()
+  }
+
+  function parseClaims(sectionMd) {
+    if (!sectionMd) return []
+    const lines = sectionMd.split(/\r?\n/)
+    const claims = []
+    let buf = []
+    const flush = () => {
+      if (buf.length === 0) return
+      const block = buf.join('\n')
+      const claim = {
+        claim: (block.match(/^-\s*Claim:\s*(.+)/m) || [])[1] || '',
+        who: (block.match(/^-\s*Who asserts:\s*(.+)/m) || [])[1] || '',
+        evidence: (block.match(/^-\s*Evidence:\s*`?([^\n`]+)`?/m) || [])[1] || '',
+        counts: (block.match(/^-\s*Sources:\s*([^\n]+)/m) || [])[1] || '',
+        assessment: (block.match(/^-\s*Assessment:\s*(.+)/m) || [])[1] || '',
+        likelihood: (block.match(/^-\s*Likelihood[^:]*:\s*`?([^\n`]+)`?/m) || [])[1] || '',
+        citations: (block.match(/^-\s*Citations:\s*(.+)/m) || [])[1] || '',
+      }
+      claims.push(claim)
+      buf = []
+    }
+    for (const ln of lines) {
+      if (/^-\s*Claim:/i.test(ln)) flush()
+      if (ln.trim() === '') { flush(); continue }
+      buf.push(ln)
+    }
+    flush()
+    return claims.filter(c => c.claim)
+  }
+
+  const claimsSection = useMemo(() => extractSection(analysis?.report || '', /Claims and Corroboration/i), [analysis?.report])
+  const claims = useMemo(() => parseClaims(claimsSection), [claimsSection])
+
+  // Focus coverage map
+  const focusItems = useMemo(() => {
+    return (focus || '')
+      .split(/\n|;|\.|,|\u2022|\-/)
+      .map(s => s.trim())
+      .filter(s => s.length > 2)
+  }, [focus])
+  const focusCoverage = useMemo(() => {
+    const text = (analysis?.report || '').toLowerCase()
+    return focusItems.map(item => {
+      const tokens = item.toLowerCase().split(/\s+/).filter(t => t.length > 3)
+      const covered = tokens.some(t => text.includes(t))
+      // find TOC heading containing any token
+      let anchor = null
+      for (const t of tokens) {
+        const hit = toc.find(h => h.text.toLowerCase().includes(t))
+        if (hit) { anchor = `#${hit.id}`; break }
+      }
+      return { item, covered, anchor }
+    })
+  }, [focusItems, analysis?.report, toc])
 
   // Helpers: parse primitives safely
   const toInt = (v, d) => {
@@ -981,9 +1086,10 @@ export default function App() {
                 {timelineDays.map((d, i) => (
                   <div
                     key={d.date + i}
-                    className="bar"
+                    className={`bar ${selectedDate === d.date ? 'selected' : ''}`}
                     title={`${formatUK(d.date)} — ${d.count} ${d.count===1?'article':'articles'}`}
                     style={{ height: `${Math.round((d.count / timelineMax) * 100)}%` }}
+                    onClick={() => { toggleTimelineDate(d.date); scrollToKeyEvents(); }}
                   />
                 ))}
               </div>
@@ -992,6 +1098,12 @@ export default function App() {
                 <span>{formatUK(timelineDays[Math.floor(timelineDays.length/2)]?.date)}</span>
                 <span>{formatUK(timelineDays[timelineDays.length - 1]?.date)}</span>
               </div>
+              {selectedDate && (
+                <div className="mt-2 text-xs text-neutral-300 flex items-center gap-2">
+                  Filtered by date: <span className="badge">{formatUK(selectedDate)}</span>
+                  <button className="btn-xs" onClick={() => setSelectedDate(null)}>Clear</button>
+                </div>
+              )}
             </div>
           )}
           {error && <div className="mt-3 text-red-400">{error}</div>}
@@ -1041,6 +1153,12 @@ export default function App() {
                     ))}
                   </div>
                 )}
+                {/* View toggles */}
+                <div className="mt-2 flex items-center gap-3 text-xs text-neutral-400">
+                  <label className="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={showFocusMap} onChange={e=>setShowFocusMap(e.target.checked)} /><span>Focus map</span></label>
+                  <label className="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={showClaimsTable} onChange={e=>setShowClaimsTable(e.target.checked)} /><span>Claims table</span></label>
+                  <label className="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={showYardstick} onChange={e=>setShowYardstick(e.target.checked)} /><span>Yardstick legend</span></label>
+                </div>
                 <div ref={reportRef} className="mt-2 markdown">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
@@ -1070,6 +1188,65 @@ export default function App() {
                         </li>
                       ))}
                     </ul>
+                  </div>
+                )}
+                {/* Focus Coverage */}
+                {showFocusMap && focusItems.length > 0 && (
+                  <div className="claims-card">
+                    <div className="text-neutral-300 font-medium mb-1">Focus Coverage</div>
+                    <ul className="list-disc ml-5 text-sm">
+                      {focusCoverage.map((f, i) => (
+                        <li key={i} className="mb-1">
+                          {f.covered ? '✔️' : '⭕'} {f.item}
+                          {f.covered && f.anchor && (
+                            <>
+                              {' '}<a className="underline text-uaBlue" href={f.anchor} onClick={(e)=>{e.preventDefault(); const id=f.anchor.slice(1); const el=document.getElementById(id); if (el){ const y=el.getBoundingClientRect().top + window.pageYOffset - scrollOffset; window.scrollTo({ top:y, behavior:'smooth' }); }}}>see section</a>
+                            </>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {/* Yardstick Legend */}
+                {showYardstick && (
+                <div className="legend mt-3">
+                  UK MI probability yardstick: 
+                  <code className="ml-1">Almost certain (90–100%)</code>, <code>Highly likely (80–90%)</code>, <code>Likely (55–75%)</code>, <code>About as likely as not (40–60%)</code>, <code>Unlikely (20–45%)</code>, <code>Highly unlikely (10–20%)</code>, <code>Remote (0–10%)</code>.
+                </div>)}
+                {/* Claims & Corroboration Table */}
+                {showClaimsTable && claims.length > 0 && (
+                  <div className="claims-card">
+                    <div className="text-neutral-300 font-medium mb-2">Claims & Corroboration (table view)</div>
+                    <div className="overflow-auto">
+                      <table className="claims-table">
+                        <thead>
+                          <tr>
+                            <th style={{minWidth:'240px'}}>Claim</th>
+                            <th>Evidence</th>
+                            <th>Sources/Outlets</th>
+                            <th>Likelihood</th>
+                            <th>Citations</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {claims.map((c, idx) => {
+                            const ev = (c.evidence || '').toLowerCase()
+                            const evClass = ev.includes('multi') ? 'badge-green' : ev.includes('contested') ? 'badge-red' : 'badge-amber'
+                            const citeNums = Array.from((c.citations || '').matchAll(/#(\d+)/g)).map(m => m[1])
+                            return (
+                              <tr key={idx}>
+                                <td>{c.claim}<div className="text-xs text-neutral-400 mt-1">{c.who}</div></td>
+                                <td><span className={`badge-pill ${evClass}`}>{c.evidence || '-'}</span></td>
+                                <td>{c.counts || '-'}</td>
+                                <td><span className="badge-pill">{c.likelihood || '-'}</span></td>
+                                <td>{citeNums.length ? citeNums.map((n,i)=>(<a key={n+i} className="underline text-uaBlue mr-1" href={`#cite-${n}`} onClick={(e)=>{e.preventDefault(); const el=document.getElementById(`cite-${n}`); if (el){ const y=el.getBoundingClientRect().top + window.pageYOffset - scrollOffset; window.scrollTo({ top:y, behavior:'smooth' }); }}}>[#{n}]</a>)) : '-'}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </div>

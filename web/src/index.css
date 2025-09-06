@@ -251,5 +251,18 @@
   background-image: linear-gradient(to top, rgba(255,255,255,0.06) 1px, transparent 1px);
   background-size: 100% 18px; border-radius: 6px;
 }
-.timeline .bar { flex: 1 1 0; min-width: 2px; background: linear-gradient(180deg, rgba(0,176,255,0.9), rgba(255,213,0,0.85)); border-radius: 3px 3px 0 0; opacity: 0.9; }
+.timeline .bar { flex: 1 1 0; min-width: 2px; background: linear-gradient(180deg, rgba(0,176,255,0.9), rgba(255,213,0,0.85)); border-radius: 3px 3px 0 0; opacity: 0.9; cursor: pointer; border: 1px solid transparent; }
 .timeline .bar:hover { filter: brightness(1.1); opacity: 1; }
+.timeline .bar.selected { box-shadow: 0 0 0 1px rgba(255,213,0,0.6); border-color: rgba(255,213,0,0.6); }
+
+/* Claims table */
+.claims-card { @apply mt-4 p-3 rounded border border-neutral-800 bg-neutral-900; }
+.claims-table { width: 100%; border-collapse: collapse; }
+.claims-table th, .claims-table td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); vertical-align: top; }
+.claims-table th { text-align: left; color: #cbd5e1; font-weight: 600; }
+.claims-table td { color: #e5e7eb; }
+.badge-pill { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 12px; border: 1px solid rgba(255,255,255,0.12); }
+.badge-green { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.45); color: #86efac; }
+.badge-amber { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.45); color: #fcd34d; }
+.badge-red { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.45); color: #fca5a5; }
+.legend { @apply text-xs text-neutral-400; }

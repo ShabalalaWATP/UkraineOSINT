@@ -2,7 +2,7 @@ Ukraine OSINT Aggregator + Gemini Analysis
 
 Live Site
 - https://osint-ukraine-app-2025.web.app/
-- 
+ 
 <img width="1909" height="857" alt="image" src="https://github.com/user-attachments/assets/d3358589-d7dc-4e55-9ca5-f75587755be5" />
 <img width="1909" height="859" alt="image" src="https://github.com/user-attachments/assets/d2350c2a-25e3-4323-81fc-dac871410d8f" />
 <img width="1908" height="917" alt="image" src="https://github.com/user-attachments/assets/92c3d88f-c42a-40dc-825b-5db47d4476fa" />

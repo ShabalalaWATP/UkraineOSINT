@@ -98,10 +98,34 @@ async function safeFetchHtml(url, { timeoutMs = 15000, headers = {}, maxRedirect
       const len = Number(res.headers.get('content-length') || '0');
       if (Number.isFinite(len) && len > 0 && len > maxContentLength) throw new Error('Content too large');
 
-      // Read body; undici will buffer; we rely on content-length guard above
-      const text = await res.text();
-      if (text.length > maxContentLength) throw new Error('Content too large');
-      return { html: text, finalUrl: current.toString() };
+      // Re-validate host right before reading body (mitigate DNS rebinding between checks)
+      await assertPublicResolvableHost(current);
+
+      // Read body with a hard cap even if content-length is missing or wrong
+      const reader = res.body?.getReader ? res.body.getReader() : null;
+      if (reader) {
+        const decoder = new TextDecoder('utf-8');
+        let received = 0;
+        let chunks = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          received += value.byteLength || value.length || 0;
+          if (received > maxContentLength) {
+            try { reader.releaseLock?.(); res.body?.cancel?.(); } catch {}
+            throw new Error('Content too large');
+          }
+          chunks += decoder.decode(value, { stream: true });
+        }
+        chunks += decoder.decode();
+        return { html: chunks, finalUrl: current.toString() };
+      } else {
+        // Fallback if reader not available
+        const ab = await res.arrayBuffer();
+        if (ab.byteLength > maxContentLength) throw new Error('Content too large');
+        const text = new TextDecoder('utf-8').decode(ab);
+        return { html: text, finalUrl: current.toString() };
+      }
     } finally {
       clearTimeout(to);
     }

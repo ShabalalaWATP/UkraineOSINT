@@ -2,6 +2,9 @@
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 const { z } = require('zod');
 const { aggregateArticles } = require('./sources/aggregate');
@@ -12,6 +15,8 @@ const { extractFromUrl } = require('./services/extract');
 dotenv.config();
 
 const app = express();
+app.disable('x-powered-by');
+app.set('trust proxy', 1); // respect X-Forwarded-* (Render, proxies)
 
 // Respect PORT and HOST from env; bind to localhost by default to avoid EACCES on Windows
 const PORT = Number(process.env.PORT) || 3001;
@@ -34,7 +39,19 @@ app.use(cors({
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+// Security headers (no CSP here to avoid breaking styles)
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
+app.use(compression());
 app.use(express.json({ limit: '2mb' }));
+
+// Basic rate limiting (tuned per route below)
+const generalLimiter = rateLimit({ windowMs: 60 * 1000, max: 300 });
+const analyzeLimiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
+const extractLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
+app.use(generalLimiter);
 
 const SourcesEnum = z.enum(['gdelt', 'guardian', 'currents', 'newsdata', 'gnews', 'rss']);
 
@@ -80,7 +97,7 @@ app.get('/api/articles', async (req, res) => {
   }
 });
 
-app.post('/api/analyze', async (req, res) => {
+app.post('/api/analyze', analyzeLimiter, async (req, res) => {
   try {
     const schema = z.object({
       start: z.string(),
@@ -119,7 +136,7 @@ app.post('/api/analyze', async (req, res) => {
 });
 
 // Extract full article content (best-effort) for a given URL
-app.post('/api/extract', async (req, res) => {
+app.post('/api/extract', extractLimiter, async (req, res) => {
   try {
     const schema = z.object({ url: z.string().url() });
     const { url } = schema.parse(req.body || {});
@@ -131,7 +148,7 @@ app.post('/api/extract', async (req, res) => {
 });
 
 // Batch extract for multiple URLs (sequential to avoid overloading)
-app.post('/api/extract-batch', async (req, res) => {
+app.post('/api/extract-batch', extractLimiter, async (req, res) => {
   try {
     const schema = z.object({ urls: z.array(z.string().url()).min(1).max(50) });
     const { urls } = schema.parse(req.body || {});

@@ -572,7 +572,10 @@ export default function App() {
   function downloadCSV(rows, fileLabel = 'articles') {
     const header = ['id','source','title','url','published_at','lang','description','content_excerpt']
     const esc = (v) => {
-      const s = String(v ?? '').replaceAll('"', '""')
+      let s = String(v ?? '')
+      // Neutralize CSV formula injection for cells starting with = + - @
+      if (/^[=+\-@]/.test(s)) s = "'" + s
+      s = s.replaceAll('"', '""')
       return '"' + s + '"'
     }
     const lines = [header.join(',')]
@@ -880,7 +883,7 @@ export default function App() {
             <a
               href="https://github.com/ShabalalaWATP"
               target="_blank"
-              rel="noreferrer"
+              rel="noreferrer noopener"
               aria-label="GitHub @ShabalalaWATP"
               className="icon-btn"
               title="GitHub @ShabalalaWATP"
@@ -1171,7 +1174,7 @@ export default function App() {
                         if (h.startsWith('#')) {
                           return <a href={h} onClick={(e)=>{ e.preventDefault(); const id=h.slice(1); const el=document.getElementById(id); if (el){ const y=el.getBoundingClientRect().top + window.pageYOffset - scrollOffset; window.scrollTo({ top:y, behavior:'smooth' }); } }} {...props} />
                         }
-                        return <a href={h} target="_blank" rel="noreferrer" {...props} />
+                        try { const u = new URL(h, window.location.origin); const proto = u.protocol.toLowerCase(); if (!(proto === 'http:' || proto === 'https:' || proto === 'mailto:')) { return <a href="#" {...props} />; } } catch {} return <a href={h} target="_blank" rel="noreferrer noopener" {...props} />
                       },
                     }}
                   >
@@ -1184,7 +1187,7 @@ export default function App() {
                     <ul className="list-disc ml-5">
                       {analyzedDocs.map((d, i) => (
                         <li key={d.id + i} id={`cite-${i+1}`}>
-                          [#{i+1}] <a href={d.url} target="_blank" rel="noreferrer">{d.title || d.url}</a>
+                          [#{i+1}] <a href={d.url} target="_blank" rel="noreferrer noopener">{d.title || d.url}</a>
                         </li>
                       ))}
                     </ul>
@@ -1275,7 +1278,7 @@ export default function App() {
                     </div>
                     <div className="text-xs text-neutral-500">{new Date(a.published_at).toLocaleString()}</div>
                   </div>
-                  <a href={a.url} target="_blank" rel="noreferrer" className="title-item mt-1 text-neutral-100 block">{a.title || a.url}</a>
+                  <a href={a.url} target="_blank" rel="noreferrer noopener" className="title-item mt-1 text-neutral-100 block">{a.title || a.url}</a>
                   <div className="desc-item mt-1 break-words">{a.description || (a.content_excerpt ? a.content_excerpt.slice(0, 240) + (a.content_excerpt.length > 240 ? '…' : '') : '')}</div>
                   <div className="mt-2 flex items-center gap-2">
                     <button
@@ -1287,7 +1290,7 @@ export default function App() {
                       Enrich
                     </button>
                     {a.content_excerpt && <span className="badge">extracted</span>}
-                    <a className="btn-xs" href={a.url} target="_blank" rel="noreferrer">Open</a>
+                    <a className="btn-xs" href={a.url} target="_blank" rel="noreferrer noopener">Open</a>
                   </div>
                 </div>
               ))}
@@ -1300,7 +1303,7 @@ export default function App() {
               <h2 className="font-semibold mb-3 title-main">Articles (showing {Math.min(articles.length, Number(showLimit) || 60)} of {articles.length})</h2>
               <div className="space-y-3 max-h-[60vh] overflow-auto pr-2">
                 {articles.slice(0, Math.max(10, Math.min(500, Number(showLimit) || 60))).map((a, idx) => (
-                  <a key={a.id + idx} href={a.url} target="_blank" rel="noreferrer" className="link-card">
+                  <a key={a.id + idx} href={a.url} target="_blank" rel="noreferrer noopener" className="link-card">
                     <div className="flex items-center justify-between gap-3">
                       <div className="badge-source flex items-center gap-1"><img src={`https://www.google.com/s2/favicons?sz=32&domain_url=${encodeURIComponent(a.url)}`} alt="" className="w-3.5 h-3.5 rounded-sm"/><span>{a.source}</span></div>
                       <div className="text-xs text-neutral-500">{new Date(a.published_at).toLocaleString()}</div>
@@ -1368,7 +1371,7 @@ export default function App() {
                             if (h.startsWith('#')) {
                               return <a href={h} onClick={(e)=>{ e.preventDefault(); const id=h.slice(1); const el=document.getElementById(id); if (el){ const y=el.getBoundingClientRect().top + window.pageYOffset - scrollOffset; window.scrollTo({ top:y, behavior:'smooth' }); } }} {...props} />
                             }
-                            return <a href={h} target="_blank" rel="noreferrer" {...props} />
+                            try { const u = new URL(h, window.location.origin); const proto = u.protocol.toLowerCase(); if (!(proto === 'http:' || proto === 'https:' || proto === 'mailto:')) { return <a href="#" {...props} />; } } catch {} return <a href={h} target="_blank" rel="noreferrer noopener" {...props} />
                           },
                         }}
                       >
@@ -1382,7 +1385,7 @@ export default function App() {
                       <ul className="list-disc ml-5">
                         {analyzedDocs.map((d, i) => (
                           <li key={d.id + i} id={`cite-${i+1}`}>
-                            [#{i+1}] <a href={d.url} target="_blank" rel="noreferrer">{d.title || d.url}</a>
+                            [#{i+1}] <a href={d.url} target="_blank" rel="noreferrer noopener">{d.title || d.url}</a>
                           </li>
                         ))}
                       </ul>
@@ -1399,7 +1402,7 @@ export default function App() {
         <a
           href="https://github.com/ShabalalaWATP"
           target="_blank"
-          rel="noreferrer"
+          rel="noreferrer noopener"
           className="ml-1 text-neutral-400 hover:text-uaBlue hover:underline"
         >
           GitHub @ShabalalaWATP

@@ -101,6 +101,19 @@ export default function App() {
     return out
   }, [analysis?.report])
 
+  // Normalize model output into stricter Markdown (helps if the model used numbered titles)
+  function normalizeReportText(text) {
+    if (!text) return ''
+    let t = String(text)
+    // Convert lines like "1) Executive Summary" into Markdown headings
+    t = t.replace(/^\s*(\d+)\)\s+(.*)$/gm, (m, n, rest) => {
+      const num = parseInt(n, 10)
+      if (num >= 1 && num <= 9) return `## ${rest}`
+      return m
+    })
+    return t
+  }
+
   // Utility: YYYY-MM-DD from date-like value (UTC)
   function ymd(d) {
     try { return new Date(d).toISOString().slice(0,10) } catch { return '' }
@@ -347,7 +360,7 @@ export default function App() {
   async function fetchArticles() {
     setLoadingFetch(true); setError(''); setAnalysis(null); setStats(null)
     try {
-      const params = new URLSearchParams({ start, end, q, sources: sources.join(','), maxPerSource: '50' })
+      const params = new URLSearchParams({ start, end, q, sources: sources.join(','), maxPerSource: '50', language: 'en' })
       const j = await fetchJSON(`/api/articles?${params.toString()}`, {}, 20000)
       setArticles(j.articles || [])
       setStats(j.stats || null)
@@ -487,7 +500,7 @@ export default function App() {
       `- Generated: ${new Date().toISOString()}`,
       ''
     ].join('\n')
-    const body = (analysis.report || '').trim()
+    const body = normalizeReportText(analysis.report || '').trim()
     let cites = ''
     if (analyzedDocs.length > 0) {
       const lines = analyzedDocs.map((d, i) => `- [#${i + 1}] ${d.title || d.url} — ${d.url}`)
@@ -1044,7 +1057,7 @@ export default function App() {
                       },
                     }}
                   >
-                    {(analysis.report || '').replace(/\[#(\d+)\]/g, (_m, n) => `[#${n}](#cite-${n})`)}
+                    {normalizeReportText(analysis.report || '').replace(/\[#(\d+)\]/g, (_m, n) => `[#${n}](#cite-${n})`)}
                   </ReactMarkdown>
                 </div>
                 {analyzedDocs.length > 0 && (
@@ -1182,7 +1195,7 @@ export default function App() {
                           },
                         }}
                       >
-                        {(analysis.report || '').replace(/\[#(\d+)\]/g, (_m, n) => `[#${n}](#cite-${n})`)}
+                        {normalizeReportText(analysis.report || '').replace(/\[#(\d+)\]/g, (_m, n) => `[#${n}](#cite-${n})`)}
                       </ReactMarkdown>
                     </div>
                   </div>

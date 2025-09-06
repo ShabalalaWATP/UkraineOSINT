@@ -3,8 +3,10 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 function chunkArticles(articles, maxCharsPerChunk = 12000, maxDocs = 60) {
   const docs = articles.slice(0, maxDocs).map((a, idx) => {
     const n = idx + 1;
-    const excerpt = (a.content_excerpt || a.description || a.title || '').replace(/\s+/g, ' ').slice(0, 800);
-    return `[#${n}] ${a.title || '(no title)'}\nSource: ${a.source}\nDate: ${a.published_at}\nURL: ${a.url}\nExcerpt: ${excerpt}`;
+    const excerpt = (a.content_excerpt || a.description || a.title || '').replace(/\s+/g, ' ').slice(0, 1200);
+    let host = '';
+    try { host = new URL(a.url).hostname; } catch {}
+    return `[#${n}] ${a.title || '(no title)'}\nOutlet: ${host || a.source}\nDate: ${a.published_at}\nURL: ${a.url}\nExcerpt: ${excerpt}`;
   });
   const chunks = [];
   let buf = '';
@@ -67,7 +69,8 @@ function buildOsintStructuredPrompt({ start, end, q, focus }) {
 - Attribute clearly and cite inline with [#n] immediately after claims.
 - Prefer cross-source corroboration; note contradictions explicitly.
 - If insufficient evidence, say so.
-- Keep language concise and analytical; avoid rhetorical flourish.
+ - Keep language concise and analytical; avoid rhetorical flourish.
+ - Prefer high-credibility mainstream outlets; treat tabloids/aggregators/partisan blogs as low credibility. Do NOT base conclusions solely on low-credibility sources.
  - Use proper names and locations; dates as DD Mon YYYY (UK).
  - Use inline badges in backticks for Evidence and Likelihood as shown.
  - Total length target: ~1200–1500 words.`;
@@ -114,7 +117,7 @@ async function analyzeWithGemini({ start, end, q, focus = '', promptPreset = 'os
   let report = '';
   let chunkCount = chunks.length;
   let fallback = null;
-  const fallbacks = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  const fallbacks = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-pro', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'];
   // Ensure we try the requested model first, then fallback chain (skipping duplicates)
   const chain = [usedModel, ...fallbacks.filter(m => m !== usedModel)];
   let lastErr = null;

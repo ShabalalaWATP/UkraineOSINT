@@ -25,7 +25,23 @@ async function aggregateArticles({ start, end, q, sources, maxPerSource, languag
   if (sources.includes('rss')) add(fetchRss, 'rss');
 
   const results = await Promise.all(tasks);
-  const all = results.flatMap(r => r.list || []);
+  let all = results.flatMap(r => r.list || []);
+
+  // Optional domain allow/block lists via environment
+  const blocked = (process.env.BLOCKED_DOMAINS || '')
+    .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  const allowed = (process.env.ALLOWED_DOMAINS || '')
+    .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  if (blocked.length || allowed.length) {
+    all = all.filter(a => {
+      let host = '';
+      try { host = new URL(a.url).hostname.toLowerCase(); } catch {}
+      if (!host) return false;
+      if (allowed.length && !allowed.some(d => host.endsWith(d))) return false;
+      if (blocked.length && blocked.some(d => host.endsWith(d))) return false;
+      return true;
+    });
+  }
 
   const map = new Map();
   for (const a of all) {

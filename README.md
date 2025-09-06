@@ -1,18 +1,22 @@
 Ukraine OSINT Aggregator + Gemini Analysis
 
+Live Site
+- https://osint-ukraine-app-2025.web.app/
+
 Overview
-- Gathers recent reporting on the Ukraine war from multiple free sources by date range and keyword, deduplicates, and synthesizes a structured OSINT report using Gemini.
-- Stack: Node.js (Express) API + React (Vite + Tailwind) UI. Runs locally or can be deployed.
-- Secrets are loaded from environment variables. Do not commit your API keys.
+- Aggregates Ukraine war reporting by date range and keyword from multiple sources, deduplicates, and synthesizes a structured OSINT report with inline citations using Gemini.
+- Stack: Node.js (Express) API + React (Vite + Tailwind) UI. Runs locally or in the cloud (free) via Firebase Hosting (frontend) + Render (backend).
+- Secrets are environment variables. Never commit API keys.
 
 Key Features
 - Multi‑source aggregation: GDELT, The Guardian, Currents API, Newsdata, GNews, plus curated RSS (Kyiv Independent, BBC, DW, ISW, etc.).
-- Filters: date range, keyword, source toggles, language.
-- Dedup + stats: URL canonicalization and per‑source timing/counts.
-- Enrich Full Text (Top N): fetches article pages and extracts the main text (Readability) to produce higher‑quality excerpts for analysis.
-- Gemini analysis: structured OSINT report (Executive Summary, Key Events, Timeline, Thematic, Claims/Corroboration, Outliers/Disinfo, Assessment/Confidence, Gaps, Citations). Renders as Markdown with a TOC.
-- Exports: Markdown, HTML, Print to PDF, DOCX, JSON, CSV (all articles and analyzed subset).
-- Polished UI: dark neon theme, quick keyword presets, sticky actions bar, collapsible Advanced filters, sticky TOC, per‑article favicons, skeleton loaders, toasts, mobile‑friendly layout, floating back‑to‑top, keyboard shortcuts.
+- Filters: date range, keyword, source toggles, language; dedup + per‑source stats.
+- Enrich Full Text (Top N): fetch & extract the main text for better analysis.
+- Gemini analysis: Executive Summary, Key Events, Timeline, Thematic Analysis, Claims & Corroboration (Evidence badges, Sources/Outlets counts, UK MI probability yardstick), Outliers/Disinfo, Assessment/Confidence, Gaps, Citations.
+- Markdown renderer: Heading normalization (e.g., “1) …” → “## …”), clickable citations [#n] → Sources, sticky TOC.
+- Timeline: UK‑date labels and histogram of articles/day.
+- Exports: Markdown, HTML, Print to PDF, DOCX, JSON, CSV (all articles / analyzed subset).
+- UX: Dark neon theme, keyboard shortcuts, toasts, state persistence + shareable URL, inline “Saved!” feedback, mobile‑friendly.
 
 Keyboard Shortcuts
 - f: Fetch articles
@@ -20,89 +24,98 @@ Keyboard Shortcuts
 - /: Focus keyword
 - r: Reset all
 - c: Clear output
+- u: Copy share link
 - ?: Show shortcuts help
 - After analysis: m (.md), d (.docx), h (HTML), p (Print), j (JSON)
 
 Repository Structure
-- server/ — Express API, connectors (GDELT/Guardian/Currents/Newsdata/GNews/RSS), Gemini analysis, extraction service
-- web/ — React (Vite) + Tailwind UI
+- `server/` — Express API, source connectors, Gemini analysis, extractor
+- `web/` — React (Vite) + Tailwind UI
 
 Requirements
-- Node.js 20+ recommended (18+ should work)
-- npm (or pnpm)
+- Node.js 20+
+- npm
 
-Environment Variables (server/.env)
-- HOST=127.0.0.1
-- PORT=3001
-- GEMINI_API_KEY=your_gemini_key
-- GUARDIAN_API_KEY=your_guardian_key (optional)
-- CURRENTS_API_KEY=your_currents_key (optional)
-- NEWSDATA_API_KEY=your_newsdata_key (optional)
-- GNEWS_API_KEY=your_gnews_key (optional)
-
-Do not commit secrets. This repo contains a .gitignore that excludes `server/.env` and `web/.env`.
+Security Highlights
+- API keys only on the server (Render env vars). Frontend uses `VITE_API_BASE` and never ships secrets.
+- CORS locked to Firebase Hosting origins in production.
+- `/api/extract` SSRF guard: http/https only, blocks private IPs, safe redirects, size/timeouts.
+- Optional domain quality gates: `ALLOWED_DOMAINS` or `BLOCKED_DOMAINS` to filter low‑credibility sources.
 
 Local Development
 1) Configure API keys
-- Copy `server/.env.example` to `server/.env` and fill in your keys.
+- Copy `server/.env.example` → `server/.env` and fill keys:
+  - `HOST=127.0.0.1`
+  - `PORT=55001` (matches Vite dev proxy by default)
+  - `GEMINI_API_KEY=...`
+  - Optional: `GUARDIAN_API_KEY`, `CURRENTS_API_KEY`, `GNEWS_API_KEY`, `NEWSDATA_API_KEY`
 
 2) Start the API (terminal 1)
 - `cd server`
 - `npm install`
-- `npm run start`
-- Health: http://127.0.0.1:3001/api/health
+- `npm start`
+- Health: `http://127.0.0.1:55001/api/health`
 
 3) Start the Web UI (terminal 2)
 - `cd web`
 - `npm install`
-- `npm run dev`
-- Open the URL printed by Vite (usually http://localhost:5173). During dev, Vite proxies `/api` to the server.
+- `npm run start` (alias for dev)
+- Open the Vite URL (usually `http://localhost:5173`). Dev proxy forwards `/api` → `http://127.0.0.1:55001`.
 
-Common Tasks
-- Fetch: choose dates/keyword/sources → Fetch
-- Enrich: click “Enrich Full Text (Top N)” to extract main text for better analysis (N = Docs to Analyze)
-- Analyze: choose a model (default: gemini‑2.5‑flash) → Analyze; read the Markdown report with inline [#n] citations
-- Export: use buttons in the Analysis panel (Markdown, HTML, Print to PDF, DOCX, JSON). CSV export buttons are in the filters panel.
+Alternative (dev against cloud API)
+- Set `VITE_API_BASE` to your Render URL, then run dev:
+  - Windows PowerShell: `$env:VITE_API_BASE="https://<your-render-service>.onrender.com"; npm run dev`
+  - macOS/Linux: `VITE_API_BASE=https://<your-render-service>.onrender.com npm run dev`
 
-Production Build (optional)
-- Build web assets: `cd web && npm run build` → outputs `web/dist/`
-- Serve the UI from a static host (e.g., Nginx, S3, Netlify) and run the API on a server (Render/Heroku/VPS).
-- Configure a reverse proxy so the UI’s domain routes `/api` to the server (or update the UI to use an absolute API URL).
+Cloud Deployment (Free)
+Frontend: Firebase Hosting
+1) Prereqs: `npm i -g firebase-tools` and `firebase login`
+2) Build with API base:
+- `cd web`
+- `VITE_API_BASE=https://<your-render-service>.onrender.com npm run build`
+3) Deploy:
+- `firebase deploy --only hosting` (uses `web/firebase.json`)
 
-Security & Compliance
-- This tool stores only metadata, short excerpts, and links to original articles. Full‑text extraction is for local analysis; always respect each site’s Terms of Service.
-- Attribution: the report includes citations that map to the analyzed links.
+Backend: Render (Web Service)
+1) New Web Service → connect GitHub repo → Root Directory: `server`
+2) Runtime: Node 20+ | Build: `npm install` | Start: `node src/server.js`
+3) Environment:
+- `HOST=0.0.0.0`
+- `GEMINI_API_KEY=...` (+ optional Guardian/Currents/GNews/Newsdata)
+- Optional allow/block:
+  - `ALLOWED_DOMAINS=bbc.co.uk,bbc.com,dw.com,kyivindependent.com,understandingwar.org,reuters.com,apnews.com,theguardian.com`
+  - `BLOCKED_DOMAINS=zerohedge.com,freerepublic.com` (use either allowlist or blocklist)
 
-Push This Project to GitHub (ShabalalaWATP/UkraineOSINT)
-1) Create the repo on GitHub (empty, no README):
-- https://github.com/new → owner: `ShabalalaWATP`, name: `UkraineOSINT`
+CI/CD (Auto‑deploy)
+- Backend (Render): enable auto‑deploy on push to `main` for the `server/` service.
+- Frontend (GitHub Actions → Firebase Hosting):
+  - Workflow: `.github/workflows/deploy-web.yml` (included)
+  - GitHub Secrets:
+    - `VITE_API_BASE` = `https://<your-render-service>.onrender.com`
+    - `FIREBASE_SERVICE_ACCOUNT` = JSON for a service account with Firebase Hosting Admin role (project: e.g., `osint-ukraine-app-2025`).
+  - Push changes under `web/**` → Action builds and deploys to Hosting (live).
 
-2) Initialize and push from the project root:
-- `git init`
-- `git add -A`
-- `git commit -m "Initial commit: Ukraine OSINT Aggregator"`
-- `git branch -M main`
-- Add remote (choose HTTPS or SSH):
-  - HTTPS: `git remote add origin https://github.com/ShabalalaWATP/UkraineOSINT.git`
-  - SSH:   `git remote add origin git@github.com:ShabalalaWATP/UkraineOSINT.git`
-- `git push -u origin main`
+Running in Production (manual)
+- Build UI locally: `cd web && VITE_API_BASE=<api-url> npm run build`
+- Deploy UI: `firebase deploy --only hosting`
+- Render redeploys server automatically on push, or click “Manual Deploy”.
 
-Important: ensure `server/.env` is not staged. The included `.gitignore` already ignores it.
+Screenshots
+- Executive Summary & TOC — [add screenshot here]
+- Timeline (articles/day) — [add screenshot here]
+- Claims & Corroboration (evidence badges) — [add screenshot here]
+- Exports (Markdown/HTML/DOCX/CSV) — [add screenshot here]
 
 Troubleshooting
-- Few or no articles: narrow the date range; some APIs are rate‑limited and paginated.
-- Analysis fails: ensure `GEMINI_API_KEY` is set; try a smaller “Docs to Analyze”.
-- Slow fetches: start with Guardian + RSS + GNews; GDELT can be slower/noisier.
-- Ports in use: change `HOST`/`PORT` in `server/.env`, then restart.
+- Raw Markdown visible on site: hard refresh (Ctrl+F5). The app normalizes headings like `1) Executive Summary` → proper Markdown.
+- Timeout on Analyze: client timeout is 5 minutes; server timeouts increased. Try fewer docs or a faster model; “Enrich Full Text” improves quality.
+- CORS “Not allowed”: confirm Hosting URL matches the allowlist in `server/src/server.js`.
+- No analysis: ensure `GEMINI_API_KEY` is set on Render.
+- Unwanted sources: set `ALLOWED_DOMAINS` or `BLOCKED_DOMAINS` in Render environment.
 
 Credits
-- Sources: GDELT, The Guardian, CurrentsAPI, Newsdata.io, GNews, and curated RSS feeds (Kyiv Independent, BBC, DW, ISW).
+- Sources: GDELT, The Guardian, CurrentsAPI, Newsdata.io, GNews, curated RSS (Kyiv Independent, BBC, DW, ISW).
 - Readability extraction: @mozilla/readability.
 
 Created by Alex Orr — GitHub @ShabalalaWATP
 
-Branding (optional)
-- You can add a Ukrainian badge image to the header.
-- Save your image as `web/public/Ukraine.jpeg` (Vite serves files from `web/public` at `/`). If the `public` folder doesn't exist, create it.
-- The app will attempt `/Ukraine.jpeg` first, then `/Ukraine.JPEG` as a fallback. If neither exists, it hides the image automatically.
-- The image is auto‑sized (28px tall) and keeps aspect ratio with a subtle neon glow.

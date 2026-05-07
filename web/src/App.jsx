@@ -19,8 +19,8 @@ const SOURCE_KEYS = [
   { id: 'gdelt', label: 'GDELT' },
   { id: 'guardian', label: 'Guardian' },
   { id: 'currents', label: 'Currents' },
-  { id: 'newsdata', label: 'Newsdata' },
   { id: 'gnews', label: 'GNews' },
+  { id: 'newsapi', label: 'NewsAPI' },
   { id: 'worldnews', label: 'World News' },
   { id: 'rss', label: 'RSS' },
 ]

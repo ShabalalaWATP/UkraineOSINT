@@ -1,8 +1,8 @@
 const { fetchGdelt } = require('./gdelt');
 const { fetchGuardian } = require('./guardian');
 const { fetchCurrents } = require('./currents');
-const { fetchNewsdata } = require('./newsdata');
 const { fetchGnews } = require('./gnews');
+const { fetchNewsApi } = require('./newsapi');
 const { fetchWorldNews } = require('./worldnews');
 const { fetchRss } = require('./rss');
 const { idFromUrl, canonicalizeUrl } = require('../utils/url');
@@ -33,8 +33,8 @@ async function aggregateArticles({ start, end, q, sources, maxPerSource, languag
   if (sources.includes('gdelt')) add(fetchGdelt, 'gdelt');
   if (sources.includes('guardian')) add(fetchGuardian, 'guardian');
   if (sources.includes('currents')) add(fetchCurrents, 'currents');
-  if (sources.includes('newsdata')) add(fetchNewsdata, 'newsdata');
   if (sources.includes('gnews')) add(fetchGnews, 'gnews');
+  if (sources.includes('newsapi')) add(fetchNewsApi, 'newsapi');
   if (sources.includes('worldnews')) add(fetchWorldNews, 'worldnews');
   if (sources.includes('rss')) add(fetchRss, 'rss');
 

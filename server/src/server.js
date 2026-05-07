@@ -54,7 +54,36 @@ const analyzeLimiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
 const extractLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
 app.use(generalLimiter);
 
-const SourcesEnum = z.enum(['gdelt', 'guardian', 'currents', 'gnews', 'newsapi', 'webz', 'rss']);
+const VALID_SOURCES = ['gdelt', 'guardian', 'currents', 'gnews', 'newsapi', 'webz', 'rss'];
+const SOURCE_ALIASES = {
+  newsdata: 'newsapi',
+  worldnews: 'webz',
+  world_news: 'webz',
+};
+
+function normalizeSources(value) {
+  const rawSources = value
+    ? String(value).split(',').map((s) => s.trim()).filter(Boolean)
+    : VALID_SOURCES;
+  const sources = [];
+  const ignored = [];
+
+  for (const raw of rawSources) {
+    const key = raw.toLowerCase();
+    const mapped = SOURCE_ALIASES[key] || key;
+    if (!VALID_SOURCES.includes(mapped)) {
+      ignored.push(raw);
+      continue;
+    }
+    if (!sources.includes(mapped)) sources.push(mapped);
+  }
+
+  if (!sources.length) {
+    throw new Error(`No valid sources selected. Expected one or more of: ${VALID_SOURCES.join(', ')}`);
+  }
+
+  return { sources, ignored };
+}
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, version: '0.1.0' });
@@ -81,12 +110,7 @@ app.get('/api/articles', async (req, res) => {
 
     const params = schema.parse(req.query);
 
-    const selectedSources = params.sources
-      ? params.sources.split(',').map((s) => s.trim()).filter(Boolean)
-      : ['gdelt', 'guardian', 'currents', 'gnews', 'newsapi', 'webz', 'rss'];
-
-    // Validate selected sources
-    selectedSources.forEach((s) => SourcesEnum.parse(s));
+    const { sources: selectedSources, ignored: ignoredSources } = normalizeSources(params.sources);
 
     const { start, end, q, maxPerSource, language } = params;
 
@@ -99,7 +123,13 @@ app.get('/api/articles', async (req, res) => {
       language,
     });
 
-    res.json({ ok: true, count: articles.length, articles, stats });
+    res.json({
+      ok: true,
+      count: articles.length,
+      articles,
+      stats,
+      sourceWarnings: ignoredSources.length ? ignoredSources.map((source) => `Ignored unknown source: ${source}`) : [],
+    });
   } catch (err) {
     console.error('GET /api/articles error', err);
     res.status(400).json({ ok: false, error: err.message || 'Invalid request' });

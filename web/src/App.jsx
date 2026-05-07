@@ -25,6 +25,25 @@ const SOURCE_KEYS = [
   { id: 'rss', label: 'RSS' },
 ]
 
+const SOURCE_IDS = SOURCE_KEYS.map(s => s.id)
+const SOURCE_ALIASES = {
+  newsdata: 'newsapi',
+  worldnews: 'webz',
+  world_news: 'webz',
+}
+
+function normalizeSourceIds(value) {
+  const raw = Array.isArray(value) ? value : String(value || '').split(',')
+  const out = []
+  for (const item of raw) {
+    const key = String(item || '').trim().toLowerCase()
+    if (!key) continue
+    const mapped = SOURCE_ALIASES[key] || key
+    if (SOURCE_IDS.includes(mapped) && !out.includes(mapped)) out.push(mapped)
+  }
+  return out.length ? out : SOURCE_IDS
+}
+
 const DEFAULT_MODEL = 'gemini-3-flash-preview'
 const MODEL_OPTIONS = [
   { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview', note: 'Latest Flash model; best default for fast OSINT reports.' },
@@ -289,7 +308,7 @@ export default function App() {
       if (params.get('start')) urlPatch.start = params.get('start')
       if (params.get('end')) urlPatch.end = params.get('end')
       if (params.get('q')) urlPatch.q = params.get('q')
-      if (params.get('sources')) urlPatch.sources = params.get('sources').split(',').filter(Boolean)
+      if (params.get('sources')) urlPatch.sources = normalizeSourceIds(params.get('sources'))
       if (params.get('model')) urlPatch.model = params.get('model')
       if (params.get('preset')) urlPatch.preset = params.get('preset')
       if (params.get('focus')) urlPatch.focus = params.get('focus')
@@ -304,7 +323,7 @@ export default function App() {
       if (patch.start) setStart(patch.start)
       if (patch.end) setEnd(patch.end)
       if (typeof patch.q === 'string') setQ(patch.q)
-      if (Array.isArray(patch.sources) && patch.sources.length) setSources(patch.sources)
+      if (Array.isArray(patch.sources) && patch.sources.length) setSources(normalizeSourceIds(patch.sources))
       if (typeof patch.model === 'string') setModel(patch.model)
       if (typeof patch.preset === 'string') setPreset(patch.preset)
       if (typeof patch.focus === 'string') setFocus(patch.focus)
@@ -348,7 +367,8 @@ export default function App() {
     syncTimerRef.current = setTimeout(() => {
       try {
         // Persist to localStorage
-        const state = { start, end, q, sources, model, preset, focus, docLimit, showLimit, analysisOnTop }
+        const cleanSources = normalizeSourceIds(sources)
+        const state = { start, end, q, sources: cleanSources, model, preset, focus, docLimit, showLimit, analysisOnTop }
         localStorage.setItem(LS_KEY, JSON.stringify(state))
 
         // Build query string (avoid noise by omitting defaults where possible)
@@ -356,9 +376,9 @@ export default function App() {
         if (start) params.set('start', start)
         if (end) params.set('end', end)
         if (q) params.set('q', q)
-        const allSrc = SOURCE_KEYS.map(s => s.id)
-        const isAll = sources.length === allSrc.length && allSrc.every(s => sources.includes(s))
-        if (!isAll) params.set('sources', sources.join(','))
+        const allSrc = SOURCE_IDS
+        const isAll = cleanSources.length === allSrc.length && allSrc.every(s => cleanSources.includes(s))
+        if (!isAll) params.set('sources', cleanSources.join(','))
         if (model && model !== DEFAULT_MODEL) params.set('model', model)
         if (preset && preset !== 'osint_structured_v1') params.set('preset', preset)
         if (focus && focus !== defaultFocus) params.set('focus', focus)
@@ -507,7 +527,9 @@ export default function App() {
   async function fetchArticles() {
     setLoadingFetch(true); setError(''); setAnalysis(null); setStats(null)
     try {
-      const params = new URLSearchParams({ start, end, q, sources: sources.join(','), maxPerSource: '50', language: 'en' })
+      const cleanSources = normalizeSourceIds(sources)
+      if (cleanSources.join(',') !== sources.join(',')) setSources(cleanSources)
+      const params = new URLSearchParams({ start, end, q, sources: cleanSources.join(','), maxPerSource: '50', language: 'en' })
       const j = await fetchJSON(`/api/articles?${params.toString()}`, {}, 60000)
       setArticles(j.articles || [])
       setStats(j.stats || null)
@@ -545,7 +567,10 @@ export default function App() {
   }
 
   function toggleSource(id) {
-    setSources(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id])
+    setSources(prev => {
+      const clean = normalizeSourceIds(prev)
+      return clean.includes(id) ? clean.filter(s => s !== id) : [...clean, id]
+    })
   }
 
   function clearOutput() {

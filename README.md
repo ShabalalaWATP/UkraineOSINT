@@ -85,8 +85,10 @@ News Source Behavior
 - Sources run independently and in parallel.
 - A source failure does not break the whole article fetch.
 - Returned `stats` include `source`, `count`, `rawCount`, `filteredOut`, `ms`, and `error`.
-- Articles are deduplicated by canonical URL and then sorted newest-first by `published_at`.
-- The AI does not choose which headlines look best. Analysis uses the first N articles from that sorted list.
+- Articles are deduplicated by canonical URL and initially sorted newest-first by `published_at`.
+- During analysis, the frontend sends a larger candidate pool and the backend ranks articles before Gemini sees them.
+- Ranking considers query/focus relevance, source profile, event-value terms, recency, and whether useful excerpt text is available.
+- Gemini receives source-context hints such as official, high-reliability, state media, commentary, or aggregator so corroboration is judged more carefully.
 - GDELT may be slow to connect, so the server uses a longer upstream connection timeout and a user-agent.
 - Newsdata archive/date searches require a Newsdata plan with archive access.
 - GNews can rate-limit if queried too frequently.
@@ -98,6 +100,7 @@ Analysis Enrichment
 - Backend analysis performs best-effort enrichment for the first 25% of selected articles, capped at 25 articles by default.
 - Automatic enrichment is skipped per article when a site blocks extraction, times out, redirects unsafely, or returns unusable text.
 - Gemini receives longer excerpts for enriched articles and shorter excerpts for the rest to keep reports detailed without overloading the API request.
+- Report metadata shows how many ranked articles were selected from the candidate pool and how many were enriched.
 
 Security
 - Secrets stay server-side in Render env vars.

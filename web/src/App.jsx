@@ -8,6 +8,7 @@ import remarkGfm from 'remark-gfm'
 const API_BASE = import.meta.env.VITE_API_BASE || ''
 const DEFAULT_DOC_LIMIT = 25
 const MAX_ANALYSIS_DOCS = 100
+const MAX_ANALYSIS_CANDIDATES = 150
 
 const defaultStart = new Date(Date.now() - 6 * 24 * 3600 * 1000)
   .toISOString().slice(0, 10)
@@ -523,12 +524,14 @@ export default function App() {
     setLoadingAnalyze(true); setError('')
     try {
       const requestedDocs = Math.max(1, Math.min(MAX_ANALYSIS_DOCS, Number(docLimit) || DEFAULT_DOC_LIMIT))
-      const toAnalyze = articles.slice(0, requestedDocs)
-      const payload = { start, end, q, model, promptPreset: preset, focus, maxDocs: toAnalyze.length, articles: toAnalyze }
+      const candidates = articles.slice(0, Math.min(articles.length, Math.max(requestedDocs, Math.min(MAX_ANALYSIS_CANDIDATES, requestedDocs * 3))))
+      const payload = { start, end, q, model, promptPreset: preset, focus, maxDocs: requestedDocs, articles: candidates }
       // Increase timeout to 5 minutes for large analyses / slower models
       const j = await fetchJSON('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 300000)
       setAnalysis(j.analysis)
-      const analyzed = toAnalyze.slice(0, j.analysis?.docCount || toAnalyze.length)
+      const analyzed = Array.isArray(j.analysis?.selectedArticles) && j.analysis.selectedArticles.length
+        ? j.analysis.selectedArticles
+        : candidates.slice(0, j.analysis?.docCount || requestedDocs)
       setAnalyzedDocs(analyzed)
       pushToast(`Analysis completed (${analyzed.length} docs)`, 'success')
       setLastAnalyze({ docs: analyzed.length, at: Date.now(), model })
@@ -1110,7 +1113,7 @@ export default function App() {
             )}
             {analysis && (
               <div className="max-w-none">
-                <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''}{analysis.usageMetadata?.totalTokenCount ? ` · Tokens: ${analysis.usageMetadata.totalTokenCount}` : ''}{typeof analysis.enrichedCount === 'number' ? ` · Enriched: ${analysis.enrichedCount}/${analysis.enrichAttemptedCount || 0}` : ''} · Focus: {(focus || '(none)')}</div>
+                <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''}{analysis.usageMetadata?.totalTokenCount ? ` · Tokens: ${analysis.usageMetadata.totalTokenCount}` : ''}{analysis.candidateCount ? ` · Ranked: ${analysis.docCount}/${analysis.candidateCount}` : ''}{typeof analysis.enrichedCount === 'number' ? ` · Enriched: ${analysis.enrichedCount}/${analysis.enrichAttemptedCount || 0}` : ''} · Focus: {(focus || '(none)')}</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button className="btn-outline" onClick={copyReport}>{copied ? 'Copied!' : 'Copy Markdown'}</button>
                   <button className="btn-outline" onClick={downloadReport}>{mdSaved ? 'Saved!' : 'Download .md'}</button>
@@ -1303,7 +1306,7 @@ export default function App() {
               )}
               {analysis && (
                 <div className="max-w-none lg:grid lg:grid-cols-[220px_1fr] lg:gap-4">
-                  <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''}{analysis.usageMetadata?.totalTokenCount ? ` · Tokens: ${analysis.usageMetadata.totalTokenCount}` : ''}{typeof analysis.enrichedCount === 'number' ? ` · Enriched: ${analysis.enrichedCount}/${analysis.enrichAttemptedCount || 0}` : ''} · Focus: {(focus || '(none)')}</div>
+                  <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''}{analysis.usageMetadata?.totalTokenCount ? ` · Tokens: ${analysis.usageMetadata.totalTokenCount}` : ''}{analysis.candidateCount ? ` · Ranked: ${analysis.docCount}/${analysis.candidateCount}` : ''}{typeof analysis.enrichedCount === 'number' ? ` · Enriched: ${analysis.enrichedCount}/${analysis.enrichAttemptedCount || 0}` : ''} · Focus: {(focus || '(none)')}</div>
                   <div className="mt-2 flex flex-wrap gap-2 lg:col-span-2">
                     <button className="btn-outline" onClick={copyReport}>{copied ? 'Copied!' : 'Copy Markdown'}</button>
                     <button className="btn-outline" onClick={downloadReport}>{mdSaved ? 'Saved!' : 'Download .md'}</button>

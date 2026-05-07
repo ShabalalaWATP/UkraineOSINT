@@ -2,13 +2,17 @@ const { ymd } = require('../utils/date');
 const { idFromUrl } = require('../utils/url');
 const { fetchJson } = require('../utils/http');
 
+function rfc3339DateTime(ymdValue, endOfDay = false) {
+  return `${ymd(ymdValue)}T${endOfDay ? '23:59:59' : '00:00:00'}Z`;
+}
+
 async function fetchCurrents({ start, end, q, maxPerSource, language }) {
   const key = process.env.CURRENTS_API_KEY;
   if (!key) return [];
   const qs = new URLSearchParams({
     keywords: q || 'Ukraine',
-    start_date: ymd(start),
-    end_date: ymd(end),
+    start_date: rfc3339DateTime(start),
+    end_date: rfc3339DateTime(end, true),
     language: language || 'en',
     page_size: String(Math.min(maxPerSource || 100, 200)),
     apiKey: key,

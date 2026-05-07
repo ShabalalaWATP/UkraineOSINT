@@ -87,7 +87,7 @@ News Source Behavior
 - Returned `stats` include `source`, `count`, `rawCount`, `filteredOut`, `ms`, and `error`.
 - Articles are deduplicated by canonical URL and initially sorted newest-first by `published_at`.
 - During analysis, the frontend sends a larger candidate pool and the backend ranks articles before Gemini sees them.
-- Ranking considers query/focus relevance, source profile, event-value terms, recency, and whether useful excerpt text is available.
+- Ranking considers query/focus relevance, source profile, event-value terms, recency, source diversity, and whether useful excerpt text is available.
 - Gemini receives source-context hints such as official, high-reliability, state media, commentary, or aggregator so corroboration is judged more carefully.
 - GDELT may be slow to connect, so the server uses a longer upstream connection timeout and a user-agent.
 - Newsdata archive/date searches require a Newsdata plan with archive access.

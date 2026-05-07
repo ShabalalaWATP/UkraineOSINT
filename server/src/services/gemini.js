@@ -178,7 +178,31 @@ function rankedArticlesForAnalysis(articles, { q, focus, maxDocs }) {
     return new Date(b.published_at) - new Date(a.published_at);
   });
 
-  return ranked.slice(0, maxDocs);
+  const hostCap = Math.max(3, Math.ceil(maxDocs * 0.25));
+  const selected = [];
+  const hostCounts = new Map();
+
+  for (const article of ranked) {
+    const host = article.source_host || articleHost(article) || article.source || 'unknown';
+    const count = hostCounts.get(host) || 0;
+    if (count >= hostCap) continue;
+    selected.push(article);
+    hostCounts.set(host, count + 1);
+    if (selected.length >= maxDocs) break;
+  }
+
+  if (selected.length < maxDocs) {
+    const selectedIds = new Set(selected.map((article) => article.id || article.url));
+    for (const article of ranked) {
+      const key = article.id || article.url;
+      if (selectedIds.has(key)) continue;
+      selected.push(article);
+      selectedIds.add(key);
+      if (selected.length >= maxDocs) break;
+    }
+  }
+
+  return selected;
 }
 
 async function enrichTopArticles(articles) {

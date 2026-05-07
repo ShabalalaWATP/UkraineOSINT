@@ -6,6 +6,7 @@ const { fetchNewsApi } = require('./newsapi');
 const { fetchWebz } = require('./webz');
 const { fetchRss } = require('./rss');
 const { idFromUrl, canonicalizeUrl } = require('../utils/url');
+const { sanitizeErrorMessage } = require('../utils/http');
 
 function isWithinDateRange(article, start, end) {
   if (!start || !end) return true;
@@ -26,7 +27,7 @@ async function aggregateArticles({ start, end, q, sources, maxPerSource, languag
     return tasks.push(
       fn({ start, end, q, maxPerSource, language })
         .then((list) => ({ name, list, ms: Date.now() - t0 }))
-        .catch((e) => ({ name, list: [], error: String(e?.message || e), ms: Date.now() - t0 }))
+        .catch((e) => ({ name, list: [], error: sanitizeErrorMessage(e), ms: Date.now() - t0 }))
     );
   };
 

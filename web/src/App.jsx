@@ -44,6 +44,26 @@ function normalizeSourceIds(value) {
   return out.length ? out : SOURCE_IDS
 }
 
+function safeExternalUrl(value, { allowMailto = false } = {}) {
+  try {
+    const url = new URL(String(value || ''), window.location.origin)
+    const protocol = url.protocol.toLowerCase()
+    if (protocol === 'http:' || protocol === 'https:' || (allowMailto && protocol === 'mailto:')) {
+      return url.href
+    }
+  } catch {}
+  return '#'
+}
+
+function htmlEscape(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
 const DEFAULT_MODEL = 'gemini-3-flash-preview'
 const MODEL_OPTIONS = [
   { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview', note: 'Latest Flash model; best default for fast OSINT reports.' },
@@ -711,9 +731,17 @@ export default function App() {
   function buildExportHTML() {
     const inner = reportRef.current ? reportRef.current.innerHTML : '<p>No content</p>'
     const cites = analyzedDocs.length > 0
-      ? `<section class="citations-list"><h2>Sources Cited</h2><ul>${analyzedDocs.map((d, i) => `<li id="cite-${i+1}">[#${i+1}] <a href="${d.url}">${(d.title || d.url).replace(/</g,'&lt;')}</a></li>`).join('')}</ul></section>`
+      ? `<section class="citations-list"><h2>Sources Cited</h2><ul>${analyzedDocs.map((d, i) => {
+        const href = htmlEscape(safeExternalUrl(d.url))
+        const label = htmlEscape(d.title || d.url)
+        return `<li id="cite-${i+1}">[#${i+1}] <a href="${href}">${label}</a></li>`
+      }).join('')}</ul></section>`
       : ''
     const title = `OSINT Report: ${q || 'Ukraine'} (${start} → ${end})`
+    const escapedTitle = htmlEscape(title)
+    const escapedModel = htmlEscape(analysis?.model || '')
+    const escapedFallback = analysis?.fallback ? ' (fallback used)' : ''
+    const escapedFocus = htmlEscape(focus || '(none)')
     const css = `
       :root { color-scheme: dark; }
       body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, Noto Sans, 'Apple Color Emoji', 'Segoe UI Emoji'; margin: 24px; background: #0a0a0a; color: #e5e7eb; }
@@ -736,10 +764,10 @@ export default function App() {
         .markdown a { color:#0645ad; }
       }
     `
-    return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title}</title><style>${css}</style></head><body>
+    return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${escapedTitle}</title><style>${css}</style></head><body>
       <header>
         <div class="title">Ukraine OSINT Aggregator — Report</div>
-        <div class="meta">${title}<br/>Model: ${analysis?.model || ''}${analysis?.fallback ? ' (fallback used)' : ''} · Documents: ${analyzedDocs.length} · Generated: ${new Date().toISOString()} · Focus: ${(focus || '(none)').replace(/</g,'&lt;')}</div>
+        <div class="meta">${escapedTitle}<br/>Model: ${escapedModel}${escapedFallback} · Documents: ${analyzedDocs.length} · Generated: ${new Date().toISOString()} · Focus: ${escapedFocus}</div>
       </header>
       <main>
         <section class="markdown">${inner}</section>
@@ -1185,7 +1213,9 @@ export default function App() {
                         if (h.startsWith('#')) {
                           return <a href={h} onClick={(e)=>{ e.preventDefault(); const id=h.slice(1); const el=document.getElementById(id); if (el){ const y=el.getBoundingClientRect().top + window.pageYOffset - scrollOffset; window.scrollTo({ top:y, behavior:'smooth' }); } }} {...props} />
                         }
-                        try { const u = new URL(h, window.location.origin); const proto = u.protocol.toLowerCase(); if (!(proto === 'http:' || proto === 'https:' || proto === 'mailto:')) { return <a href="#" {...props} />; } } catch {} return <a href={h} target="_blank" rel="noreferrer noopener" {...props} />
+                        const safeHref = safeExternalUrl(h, { allowMailto: true })
+                        if (safeHref === '#') return <a href="#" {...props} />
+                        return <a href={safeHref} target="_blank" rel="noreferrer noopener" {...props} />
                       },
                     }}
                   >
@@ -1198,7 +1228,7 @@ export default function App() {
                     <ul className="list-disc ml-5">
                       {analyzedDocs.map((d, i) => (
                         <li key={d.id + i} id={`cite-${i+1}`}>
-                          [#{i+1}] <a href={d.url} target="_blank" rel="noreferrer noopener">{d.title || d.url}</a>
+                          [#{i+1}] <a href={safeExternalUrl(d.url)} target="_blank" rel="noreferrer noopener">{d.title || d.url}</a>
                         </li>
                       ))}
                     </ul>
@@ -1270,7 +1300,7 @@ export default function App() {
 
         {analysisOnTop ? (
           <section className="glass card-neon p-4">
-            <h2 className="font-semibold mb-3 title-main">Articles (showing {Math.min(articles.length, Number(showLimit) || 60)} of {articles.length})</h2>
+            <h2 className="font-semibold mb-3 title-main">Articles (showing {Math.min(visibleArticles.length, Number(showLimit) || 60)} of {visibleArticles.length}{selectedDate ? `, ${articles.length} total` : ''})</h2>
             <div className="space-y-3 max-h-[60vh] overflow-auto pr-2">
               {loadingFetch && Array.from({ length: 6 }).map((_, i) => (
                 <div key={'sk'+i} className="link-card">
@@ -1280,7 +1310,7 @@ export default function App() {
                   <div className="skeleton skeleton-line w-5/6 mt-2"></div>
                 </div>
               ))}
-              {!loadingFetch && articles.slice(0, Math.max(10, Math.min(500, Number(showLimit) || 60))).map((a, idx) => (
+              {!loadingFetch && visibleArticles.slice(0, Math.max(10, Math.min(500, Number(showLimit) || 60))).map((a, idx) => (
                 <div key={a.id + idx} className="link-card">
                   <div className="flex items-center justify-between gap-3">
                     <div className="badge-source flex items-center gap-1">
@@ -1289,11 +1319,11 @@ export default function App() {
                     </div>
                     <div className="text-xs text-neutral-500">{new Date(a.published_at).toLocaleString()}</div>
                   </div>
-                  <a href={a.url} target="_blank" rel="noreferrer noopener" className="title-item mt-1 text-neutral-100 block">{a.title || a.url}</a>
+                  <a href={safeExternalUrl(a.url)} target="_blank" rel="noreferrer noopener" className="title-item mt-1 text-neutral-100 block">{a.title || a.url}</a>
                   <div className="desc-item mt-1 break-words">{a.description || (a.content_excerpt ? a.content_excerpt.slice(0, 240) + (a.content_excerpt.length > 240 ? '…' : '') : '')}</div>
                   <div className="mt-2 flex items-center gap-2">
                     {a.content_excerpt && <span className="badge">excerpt</span>}
-                    <a className="btn-xs" href={a.url} target="_blank" rel="noreferrer noopener">Open</a>
+                    <a className="btn-xs" href={safeExternalUrl(a.url)} target="_blank" rel="noreferrer noopener">Open</a>
                   </div>
                 </div>
               ))}
@@ -1303,10 +1333,10 @@ export default function App() {
         ) : (
           <section className="grid grid-cols-1 lg:grid-cols-4 gap-4">
             <div className="lg:col-span-3 glass card-neon p-4">
-              <h2 className="font-semibold mb-3 title-main">Articles (showing {Math.min(articles.length, Number(showLimit) || 60)} of {articles.length})</h2>
+              <h2 className="font-semibold mb-3 title-main">Articles (showing {Math.min(visibleArticles.length, Number(showLimit) || 60)} of {visibleArticles.length}{selectedDate ? `, ${articles.length} total` : ''})</h2>
               <div className="space-y-3 max-h-[60vh] overflow-auto pr-2">
-                {articles.slice(0, Math.max(10, Math.min(500, Number(showLimit) || 60))).map((a, idx) => (
-                  <a key={a.id + idx} href={a.url} target="_blank" rel="noreferrer noopener" className="link-card">
+                {visibleArticles.slice(0, Math.max(10, Math.min(500, Number(showLimit) || 60))).map((a, idx) => (
+                  <a key={a.id + idx} href={safeExternalUrl(a.url)} target="_blank" rel="noreferrer noopener" className="link-card">
                     <div className="flex items-center justify-between gap-3">
                       <div className="badge-source flex items-center gap-1"><img src={`https://www.google.com/s2/favicons?sz=32&domain_url=${encodeURIComponent(a.url)}`} alt="" className="w-3.5 h-3.5 rounded-sm"/><span>{a.source}</span></div>
                       <div className="text-xs text-neutral-500">{new Date(a.published_at).toLocaleString()}</div>
@@ -1345,7 +1375,7 @@ export default function App() {
                     <div className={`mt-3 toc ${tocOpen ? '' : 'hidden'} lg:block lg:sticky lg:top-[120px] lg:self-start`}>
                       <div className="text-neutral-500 mb-1">Table of Contents</div>
                       {toc.map((t, i) => (
-                        <a key={t.id} href={`#${t.id}`} className={`toc-item l${t.depth} ${i===currentIdx ? 'active' : ''}`} onClick={(e)=>{e.preventDefault(); const el=document.getElementById(t.id); if (el) { const y = el.getBoundingClientRect().top + window.pageYOffset - TOP_OFFSET; window.scrollTo({ top: y, behavior:'smooth' }); }}}>
+                        <a key={t.id} href={`#${t.id}`} className={`toc-item l${t.depth} ${i===currentIdx ? 'active' : ''}`} onClick={(e)=>{e.preventDefault(); const el=document.getElementById(t.id); if (el) { const y = el.getBoundingClientRect().top + window.pageYOffset - scrollOffset; window.scrollTo({ top: y, behavior:'smooth' }); }}}>
                           {t.text}
                         </a>
                       ))}
@@ -1374,7 +1404,9 @@ export default function App() {
                             if (h.startsWith('#')) {
                               return <a href={h} onClick={(e)=>{ e.preventDefault(); const id=h.slice(1); const el=document.getElementById(id); if (el){ const y=el.getBoundingClientRect().top + window.pageYOffset - scrollOffset; window.scrollTo({ top:y, behavior:'smooth' }); } }} {...props} />
                             }
-                            try { const u = new URL(h, window.location.origin); const proto = u.protocol.toLowerCase(); if (!(proto === 'http:' || proto === 'https:' || proto === 'mailto:')) { return <a href="#" {...props} />; } } catch {} return <a href={h} target="_blank" rel="noreferrer noopener" {...props} />
+                            const safeHref = safeExternalUrl(h, { allowMailto: true })
+                            if (safeHref === '#') return <a href="#" {...props} />
+                            return <a href={safeHref} target="_blank" rel="noreferrer noopener" {...props} />
                           },
                         }}
                       >
@@ -1388,7 +1420,7 @@ export default function App() {
                       <ul className="list-disc ml-5">
                         {analyzedDocs.map((d, i) => (
                           <li key={d.id + i} id={`cite-${i+1}`}>
-                            [#{i+1}] <a href={d.url} target="_blank" rel="noreferrer noopener">{d.title || d.url}</a>
+                            [#{i+1}] <a href={safeExternalUrl(d.url)} target="_blank" rel="noreferrer noopener">{d.title || d.url}</a>
                           </li>
                         ))}
                       </ul>

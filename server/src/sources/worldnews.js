@@ -29,7 +29,7 @@ async function fetchWorldNews({ start, end, q, maxPerSource, language }) {
 
   const url = `https://api.worldnewsapi.com/search-news?${qs.toString()}`;
   const data = await fetchJson(url, {
-    timeoutMs: 15000,
+    timeoutMs: 45000,
     headers: { 'x-api-key': key },
   });
   const articles = data?.news || [];

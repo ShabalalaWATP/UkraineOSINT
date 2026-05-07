@@ -6,8 +6,8 @@ import remarkGfm from 'remark-gfm'
 // If building for static hosting, set VITE_API_BASE to your deployed API host, e.g.
 //   VITE_API_BASE = "https://your-api.onrender.com"
 const API_BASE = import.meta.env.VITE_API_BASE || ''
-const DEFAULT_DOC_LIMIT = 20
-const MAX_ANALYSIS_DOCS = 40
+const DEFAULT_DOC_LIMIT = 25
+const MAX_ANALYSIS_DOCS = 100
 
 const defaultStart = new Date(Date.now() - 6 * 24 * 3600 * 1000)
   .toISOString().slice(0, 10)
@@ -1046,7 +1046,7 @@ export default function App() {
               </select>
             </div>
             <div>
-              <label className="label">Docs to Analyze (1–40)</label>
+              <label className="label">Docs to Analyze (1–100)</label>
               <input type="number" min={1} max={MAX_ANALYSIS_DOCS} className="input w-full" value={docLimit} onChange={e => setDocLimit(e.target.value)} />
             </div>
             <div>
@@ -1174,7 +1174,7 @@ export default function App() {
             )}
             {analysis && (
               <div className="max-w-none">
-                <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''}{analysis.usageMetadata?.totalTokenCount ? ` · Tokens: ${analysis.usageMetadata.totalTokenCount}` : ''} · Focus: {(focus || '(none)')}</div>
+                <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''}{analysis.usageMetadata?.totalTokenCount ? ` · Tokens: ${analysis.usageMetadata.totalTokenCount}` : ''}{typeof analysis.enrichedCount === 'number' ? ` · Enriched: ${analysis.enrichedCount}/${analysis.enrichAttemptedCount || 0}` : ''} · Focus: {(focus || '(none)')}</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button className="btn-outline" onClick={copyReport}>{copied ? 'Copied!' : 'Copy Markdown'}</button>
                   <button className="btn-outline" onClick={downloadReport}>{mdSaved ? 'Saved!' : 'Download .md'}</button>
@@ -1375,7 +1375,7 @@ export default function App() {
               )}
               {analysis && (
                 <div className="max-w-none lg:grid lg:grid-cols-[220px_1fr] lg:gap-4">
-                  <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''}{analysis.usageMetadata?.totalTokenCount ? ` · Tokens: ${analysis.usageMetadata.totalTokenCount}` : ''} · Focus: {(focus || '(none)')}</div>
+                  <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''}{analysis.usageMetadata?.totalTokenCount ? ` · Tokens: ${analysis.usageMetadata.totalTokenCount}` : ''}{typeof analysis.enrichedCount === 'number' ? ` · Enriched: ${analysis.enrichedCount}/${analysis.enrichAttemptedCount || 0}` : ''} · Focus: {(focus || '(none)')}</div>
                   <div className="mt-2 flex flex-wrap gap-2 lg:col-span-2">
                     <button className="btn-outline" onClick={copyReport}>{copied ? 'Copied!' : 'Copy Markdown'}</button>
                     <button className="btn-outline" onClick={downloadReport}>{mdSaved ? 'Saved!' : 'Download .md'}</button>

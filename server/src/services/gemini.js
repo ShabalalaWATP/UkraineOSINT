@@ -1,9 +1,20 @@
 const { GoogleGenAI } = require('@google/genai');
 const { DEFAULT_GEMINI_MODEL, GEMINI_FALLBACK_MODELS } = require('../config/geminiModels');
+const { extractFromUrl } = require('./extract');
 
-const MAX_DOCS_PER_ANALYSIS = Number(process.env.MAX_ANALYSIS_DOCS) || 40;
-const MAX_CHARS_PER_CHUNK = Number(process.env.GEMINI_CHUNK_CHAR_LIMIT) || 60000;
-const MAX_EXCERPT_CHARS = Number(process.env.GEMINI_EXCERPT_CHARS) || 700;
+function numberEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+const MAX_DOCS_PER_ANALYSIS = numberEnv('MAX_ANALYSIS_DOCS', 100);
+const MAX_CHARS_PER_CHUNK = numberEnv('GEMINI_CHUNK_CHAR_LIMIT', 180000);
+const MAX_EXCERPT_CHARS = numberEnv('GEMINI_EXCERPT_CHARS', 1200);
+const MAX_ENRICHED_EXCERPT_CHARS = numberEnv('GEMINI_ENRICHED_EXCERPT_CHARS', 2400);
+const AUTO_ENRICH_FRACTION = numberEnv('ANALYSIS_AUTO_ENRICH_FRACTION', 0.25);
+const AUTO_ENRICH_MAX = numberEnv('ANALYSIS_AUTO_ENRICH_MAX', 25);
+const AUTO_ENRICH_CONCURRENCY = numberEnv('ANALYSIS_AUTO_ENRICH_CONCURRENCY', 4);
+const AUTO_ENRICH_TIMEOUT_MS = numberEnv('ANALYSIS_AUTO_ENRICH_TIMEOUT_MS', 8000);
 
 function createGeminiClient() {
   if (!process.env.GEMINI_API_KEY) {
@@ -27,10 +38,63 @@ function mergeUsageMetadata(total, next) {
   return out;
 }
 
+function compactText(value, limit) {
+  return (value || '').replace(/\s+/g, ' ').trim().slice(0, limit);
+}
+
+async function enrichTopArticles(articles) {
+  if (!AUTO_ENRICH_FRACTION || AUTO_ENRICH_FRACTION <= 0) {
+    return { articles, enrichedCount: 0, attemptedCount: 0 };
+  }
+
+  const attemptedCount = Math.min(
+    articles.length,
+    AUTO_ENRICH_MAX,
+    Math.max(1, Math.ceil(articles.length * AUTO_ENRICH_FRACTION))
+  );
+  if (attemptedCount <= 0) {
+    return { articles, enrichedCount: 0, attemptedCount: 0 };
+  }
+  const out = articles.map((article) => ({ ...article }));
+  let nextIndex = 0;
+  let enrichedCount = 0;
+
+  async function worker() {
+    while (nextIndex < attemptedCount) {
+      const index = nextIndex++;
+      const article = out[index];
+      if (!article?.url) continue;
+      try {
+        const data = await extractFromUrl(article.url, { timeoutMs: AUTO_ENRICH_TIMEOUT_MS });
+        const text = compactText(data?.textContent, MAX_ENRICHED_EXCERPT_CHARS);
+        if (text.length > compactText(article.content_excerpt || article.description || '', MAX_EXCERPT_CHARS).length) {
+          out[index] = {
+            ...article,
+            title: article.title || data?.title || '',
+            content_excerpt: text,
+            enriched: true,
+          };
+          enrichedCount += 1;
+        }
+      } catch {
+        // Extraction is a best-effort quality boost. Analysis must continue when sites block or time out.
+      }
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.max(1, Math.min(AUTO_ENRICH_CONCURRENCY, attemptedCount)) },
+    () => worker()
+  );
+  await Promise.all(workers);
+  return { articles: out, enrichedCount, attemptedCount };
+}
+
 function chunkArticles(articles, maxCharsPerChunk = MAX_CHARS_PER_CHUNK, maxDocs = MAX_DOCS_PER_ANALYSIS) {
   const docs = articles.slice(0, maxDocs).map((a, idx) => {
     const n = idx + 1;
-    const excerpt = (a.content_excerpt || a.description || a.title || '').replace(/\s+/g, ' ').slice(0, MAX_EXCERPT_CHARS);
+    const excerptLimit = a.enriched ? MAX_ENRICHED_EXCERPT_CHARS : MAX_EXCERPT_CHARS;
+    const excerpt = compactText(a.content_excerpt || a.description || a.title || '', excerptLimit);
     let host = '';
     try { host = new URL(a.url).hostname; } catch {}
     return `[#${n}] ${a.title || '(no title)'}\nOutlet: ${host || a.source}\nDate: ${a.published_at}\nURL: ${a.url}\nExcerpt: ${excerpt}`;
@@ -116,7 +180,8 @@ async function analyzeWithGemini({ start, end, q, focus = '', promptPreset = 'os
     system = `You are an analyst. Summarize documents for ${q} from ${start} to ${end} with citations like [#n].`;
   }
 
-  const chunks = chunkArticles(articles, MAX_CHARS_PER_CHUNK, docCount);
+  const prepared = await enrichTopArticles(articles.slice(0, docCount));
+  const chunks = chunkArticles(prepared.articles, MAX_CHARS_PER_CHUNK, docCount);
 
   async function runWithModel(useModel) {
     const parts = [];
@@ -183,6 +248,8 @@ async function analyzeWithGemini({ start, end, q, focus = '', promptPreset = 'os
     focus,
     promptPreset,
     docCount,
+    enrichedCount: prepared.enrichedCount,
+    enrichAttemptedCount: prepared.attemptedCount,
     chunks: chunkCount,
     report,
     usageMetadata,

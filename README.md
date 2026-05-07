@@ -61,6 +61,11 @@ Render environment variables:
 HOST=0.0.0.0
 GEMINI_API_KEY=<Google AI Studio API key from a billed project>
 GEMINI_MODEL=gemini-3-flash-preview
+MAX_ANALYSIS_DOCS=100
+GEMINI_EXCERPT_CHARS=1200
+GEMINI_ENRICHED_EXCERPT_CHARS=2400
+ANALYSIS_AUTO_ENRICH_FRACTION=0.25
+ANALYSIS_AUTO_ENRICH_MAX=25
 GUARDIAN_API_KEY=<optional>
 CURRENTS_API_KEY=<optional>
 NEWSDATA_API_KEY=<optional>
@@ -80,10 +85,20 @@ News Source Behavior
 - Sources run independently and in parallel.
 - A source failure does not break the whole article fetch.
 - Returned `stats` include `source`, `count`, `rawCount`, `filteredOut`, `ms`, and `error`.
+- Articles are deduplicated by canonical URL and then sorted newest-first by `published_at`.
+- The AI does not choose which headlines look best. Analysis uses the first N articles from that sorted list.
 - GDELT may be slow to connect, so the server uses a longer upstream connection timeout and a user-agent.
 - Newsdata archive/date searches require a Newsdata plan with archive access.
 - GNews can rate-limit if queried too frequently.
 - RSS is keyless and acts as a reliable baseline source.
+
+Analysis Enrichment
+- The manual `Enrich Full Text` button works after fetching articles and before analysis.
+- It cannot run before fetching because there are no article URLs yet.
+- Running it after analysis only updates article excerpts; rerun analysis to use the enriched text.
+- Backend analysis also performs best-effort enrichment automatically for the first 25% of selected articles, capped at 25 articles by default.
+- Automatic enrichment is skipped per article when a site blocks extraction, times out, redirects unsafely, or returns unusable text.
+- Gemini receives longer excerpts for enriched articles and shorter excerpts for the rest to keep reports detailed without overloading the API request.
 
 Security
 - Secrets stay server-side in Render env vars.
@@ -113,6 +128,7 @@ PORT=55001
 NODE_ENV=development
 GEMINI_API_KEY=<your key>
 GEMINI_MODEL=gemini-3-flash-preview
+MAX_ANALYSIS_DOCS=100
 GUARDIAN_API_KEY=
 CURRENTS_API_KEY=
 NEWSDATA_API_KEY=

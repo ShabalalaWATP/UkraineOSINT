@@ -125,9 +125,9 @@ app.post('/api/analyze', analyzeLimiter, async (req, res) => {
           content_excerpt: z.string().optional(),
           lang: z.string().optional(),
         })
-      ),
+      ).min(1),
       model: z.string().default(DEFAULT_GEMINI_MODEL),
-      maxDocs: z.coerce.number().int().min(1).max(120).default(40),
+      maxDocs: z.coerce.number().int().min(1).max(100).default(25),
     });
 
     const body = schema.parse(req.body);

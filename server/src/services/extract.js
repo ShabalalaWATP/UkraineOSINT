@@ -133,9 +133,9 @@ async function safeFetchHtml(url, { timeoutMs = 15000, headers = {}, maxRedirect
   throw new Error('Too many redirects');
 }
 
-async function extractFromUrl(url) {
+async function extractFromUrl(url, { timeoutMs = 15000 } = {}) {
   const { html, finalUrl } = await safeFetchHtml(url, {
-    timeoutMs: 15000,
+    timeoutMs,
     headers: {
       'User-Agent': 'Mozilla/5.0 (OSINT Aggregator; +https://localhost) Chrome/120',
       'Accept-Language': 'en,en-GB;q=0.9',

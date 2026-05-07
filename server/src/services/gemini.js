@@ -56,6 +56,8 @@ const EVENT_KEYWORDS = [
 const LOW_SIGNAL_PATTERNS = [
   /america\s*250/i,
   /naval station norfolk/i,
+  /\btv news\b/i,
+  /\bmedia industry\b/i,
   /sports/i,
   /celebrity/i,
   /horoscope/i,
@@ -118,44 +120,79 @@ function tokenSet(text) {
   );
 }
 
+function searchTerms(value, minLength = 3, maxLength = 200) {
+  return Array.from(new Set(
+    compactText(value || '', maxLength)
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((term) => term.length >= minLength)
+      .filter((term) => !['and', 'the', 'for', 'with', 'from', 'about'].includes(term))
+  ));
+}
+
+function hasUkraineWarAnchor(lower) {
+  return /\bukrain(e|ian|ians)\b/i.test(lower)
+    || /\brussia(n|ns)?\b/i.test(lower)
+    || /\bkyiv\b/i.test(lower)
+    || /\bkremlin\b/i.test(lower)
+    || /\bzelensky(y)?\b/i.test(lower)
+    || /\bputin\b/i.test(lower);
+}
+
 function scoreArticle(article, { q, focus, newestMs, oldestMs }) {
   const profile = sourceProfile(article);
   const text = compactText(`${article.title || ''} ${article.description || ''} ${article.content_excerpt || ''}`, 6000);
   const lower = text.toLowerCase();
   const tokens = tokenSet(text);
   let score = 0;
+  let queryMatches = 0;
+  let focusMatches = 0;
+  let eventMatches = 0;
 
   score += profile.weight;
   if (article.content_excerpt && article.content_excerpt.length > 300) score += 8;
   if (article.description && article.description.length > 80) score += 3;
   if (article.title && article.title.length > 20) score += 2;
 
-  const queryTerms = compactText(q || 'Ukraine', 200).toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length > 2);
+  const queryTerms = searchTerms(q || 'Ukraine', 3, 200);
   for (const term of queryTerms) {
-    if (tokens.has(term)) score += 8;
+    if (tokens.has(term)) {
+      queryMatches += 1;
+      score += 8;
+    }
   }
 
-  const focusTerms = compactText(focus || '', 800).toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length > 4);
-  const uniqueFocusTerms = Array.from(new Set(focusTerms)).slice(0, 40);
-  for (const term of uniqueFocusTerms) {
-    if (tokens.has(term)) score += 2;
+  const focusTerms = searchTerms(focus || '', 5, 800).slice(0, 40);
+  for (const term of focusTerms) {
+    if (tokens.has(term)) {
+      focusMatches += 1;
+      score += 2;
+    }
   }
 
   for (const keyword of EVENT_KEYWORDS) {
-    if (lower.includes(keyword)) score += 3;
+    if (lower.includes(keyword)) {
+      eventMatches += 1;
+      score += 3;
+    }
   }
   for (const pattern of LOW_SIGNAL_PATTERNS) {
     if (pattern.test(lower)) score -= 20;
   }
 
-  if (!/\bukrain(e|ian|ians)\b/i.test(lower) && !/\brussia(n|ns)?\b/i.test(lower)) score -= 20;
+  const queryIsUkraineWar = queryTerms.some((term) => ['ukraine', 'ukrainian', 'russia', 'russian', 'war'].includes(term));
+  const anchored = hasUkraineWarAnchor(lower);
+  if (queryIsUkraineWar && !anchored) score -= 60;
+  if (queryIsUkraineWar && queryMatches === 0) score -= 35;
+  if (queryIsUkraineWar && eventMatches === 0 && focusMatches === 0) score -= 20;
+  if (!queryIsUkraineWar && !anchored) score -= 10;
 
   const publishedMs = new Date(article.published_at).getTime();
   if (Number.isFinite(publishedMs) && Number.isFinite(newestMs) && newestMs > oldestMs) {
     score += ((publishedMs - oldestMs) / (newestMs - oldestMs)) * 10;
   }
 
-  return { score, profile };
+  return { score, profile, anchored, queryMatches, focusMatches, eventMatches };
 }
 
 function rankedArticlesForAnalysis(articles, { q, focus, maxDocs }) {
@@ -163,8 +200,11 @@ function rankedArticlesForAnalysis(articles, { q, focus, maxDocs }) {
   const times = candidates.map((article) => new Date(article.published_at).getTime()).filter(Number.isFinite);
   const newestMs = times.length ? Math.max(...times) : NaN;
   const oldestMs = times.length ? Math.min(...times) : NaN;
+  const queryTerms = searchTerms(q || 'Ukraine', 3, 200);
+  const queryIsUkraineWar = queryTerms.some((term) => ['ukraine', 'ukrainian', 'russia', 'russian', 'war'].includes(term));
+  const relevanceFloor = queryIsUkraineWar ? 20 : 10;
   const ranked = candidates.map((article, originalIndex) => {
-    const { score, profile } = scoreArticle(article, { q, focus, newestMs, oldestMs });
+    const { score, profile, anchored, queryMatches, focusMatches, eventMatches } = scoreArticle(article, { q, focus, newestMs, oldestMs });
     return {
       ...article,
       analysis_rank: originalIndex + 1,
@@ -172,6 +212,7 @@ function rankedArticlesForAnalysis(articles, { q, focus, maxDocs }) {
       source_tier: profile.tier,
       source_note: profile.note,
       source_host: profile.host,
+      relevance_ok: score >= relevanceFloor && (!queryIsUkraineWar || anchored) && (queryMatches > 0 || focusMatches > 0 || eventMatches > 0),
     };
   }).sort((a, b) => {
     if (b.analysis_score !== a.analysis_score) return b.analysis_score - a.analysis_score;
@@ -183,6 +224,7 @@ function rankedArticlesForAnalysis(articles, { q, focus, maxDocs }) {
   const hostCounts = new Map();
 
   for (const article of ranked) {
+    if (!article.relevance_ok) continue;
     const host = article.source_host || articleHost(article) || article.source || 'unknown';
     const count = hostCounts.get(host) || 0;
     if (count >= hostCap) continue;
@@ -191,7 +233,7 @@ function rankedArticlesForAnalysis(articles, { q, focus, maxDocs }) {
     if (selected.length >= maxDocs) break;
   }
 
-  if (selected.length < maxDocs) {
+  if (selected.length === 0) {
     const selectedIds = new Set(selected.map((article) => article.id || article.url));
     for (const article of ranked) {
       const key = article.id || article.url;

@@ -93,10 +93,9 @@ News Source Behavior
 - RSS is keyless and acts as a reliable baseline source.
 
 Analysis Enrichment
-- The manual `Enrich Full Text` button works after fetching articles and before analysis.
-- It cannot run before fetching because there are no article URLs yet.
-- Running it after analysis only updates article excerpts; rerun analysis to use the enriched text.
-- Backend analysis also performs best-effort enrichment automatically for the first 25% of selected articles, capped at 25 articles by default.
+- Full-text enrichment runs automatically during backend analysis.
+- The normal workflow is fetch articles, then analyze; there is no manual enrichment step in the UI.
+- Backend analysis performs best-effort enrichment for the first 25% of selected articles, capped at 25 articles by default.
 - Automatic enrichment is skipped per article when a site blocks extraction, times out, redirects unsafely, or returns unusable text.
 - Gemini receives longer excerpts for enriched articles and shorter excerpts for the rest to keep reports detailed without overloading the API request.
 

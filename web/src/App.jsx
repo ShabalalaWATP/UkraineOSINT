@@ -96,10 +96,6 @@ export default function App() {
   const [headerHeight, setHeaderHeight] = useState(64)
   const [scrollOffset, setScrollOffset] = useState(140)
   const [showFab, setShowFab] = useState(false)
-  const [enriching, setEnriching] = useState(false)
-  const [enrichDone, setEnrichDone] = useState(0)
-  const [enrichTotal, setEnrichTotal] = useState(0)
-  const enrichAbortRef = useRef(false)
   const toc = useMemo(() => {
     if (!analysis?.report) return []
     const lines = analysis.report.split(/\r?\n/)
@@ -572,49 +568,6 @@ export default function App() {
     pushToast('Reset all settings', 'success')
   }
 
-  async function extractOne(url) {
-    try {
-      const j = await fetchJSON('/api/extract', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) }, 60000)
-      return j.data || null
-    } catch (e) {
-      setError('Extract failed: ' + e.message)
-      pushToast(`Extract failed: ${e.message}`, 'error')
-      return null
-    }
-  }
-
-  async function extractForTopN() {
-    const n = Math.max(1, Math.min(MAX_ANALYSIS_DOCS, Number(docLimit) || DEFAULT_DOC_LIMIT))
-    const targets = articles.slice(0, n)
-    if (!targets.length) return
-    setEnriching(true)
-    setEnrichDone(0)
-    setEnrichTotal(targets.length)
-    enrichAbortRef.current = false
-    for (let i = 0; i < targets.length; i++) {
-      if (enrichAbortRef.current) break
-      const a = targets[i]
-      const data = await extractOne(a.url)
-      if (data && data.textContent) {
-        const excerpt = data.textContent.replace(/\s+/g, ' ').slice(0, 2000)
-        setArticles(prev => prev.map(x => x.id === a.id ? { ...x, content_excerpt: excerpt, title: x.title || data.title } : x))
-      }
-      setEnrichDone(i + 1)
-    }
-    const stopped = enrichAbortRef.current
-    setEnriching(false)
-    enrichAbortRef.current = false
-    if (stopped) {
-      pushToast(`Enrichment stopped at ${enrichDone}/${enrichTotal}`, 'error')
-    } else {
-      pushToast(`Extracted content for top ${targets.length}`, 'success')
-    }
-  }
-
-  function stopEnrich() {
-    enrichAbortRef.current = true
-  }
-
   function downloadCSV(rows, fileLabel = 'articles') {
     const header = ['id','source','title','url','published_at','lang','description','content_excerpt']
     const esc = (v) => {
@@ -643,7 +596,6 @@ export default function App() {
   }
 
   const nToAnalyze = useMemo(() => Math.min(articles.length, Math.max(1, Math.min(MAX_ANALYSIS_DOCS, Number(docLimit) || DEFAULT_DOC_LIMIT))), [articles.length, docLimit])
-  const nToExtract = useMemo(() => Math.max(1, Math.min(MAX_ANALYSIS_DOCS, Number(docLimit) || DEFAULT_DOC_LIMIT)), [docLimit])
 
   function buildExportMarkdown() {
     if (!analysis) return ''
@@ -959,11 +911,11 @@ export default function App() {
           <div ref={actionsRef} className="glass card-neon p-3 flex flex-wrap items-center gap-3">
             <div className="text-sm text-neutral-300">Actions</div>
             <div className="flex items-center gap-2">
-              <button className="btn-neon" onClick={fetchArticles} disabled={loadingFetch || loadingAnalyze || enriching}>
+              <button className="btn-neon" onClick={fetchArticles} disabled={loadingFetch || loadingAnalyze}>
                 {loadingFetch ? <span className="spinner" /> : null}
                 {loadingFetch ? 'Fetching…' : 'Fetch'}
               </button>
-              <button className="btn-neon" onClick={runAnalysis} disabled={loadingAnalyze || loadingFetch || enriching || articles.length === 0}>
+              <button className="btn-neon" onClick={runAnalysis} disabled={loadingAnalyze || loadingFetch || articles.length === 0}>
                 {loadingAnalyze ? <span className="spinner" /> : null}
                 {loadingAnalyze ? 'Analyzing…' : `Analyze (${nToAnalyze})`}
               </button>
@@ -1086,22 +1038,6 @@ export default function App() {
             >
               {shareCopied ? 'Copied!' : 'Share Link'}
             </button>
-            <button
-              className="btn-outline"
-              type="button"
-              title="Fetch full article text for the first N results (based on Docs to Analyze) to enrich analysis with better excerpts."
-              onClick={extractForTopN}
-              disabled={!articles.length || loadingFetch || loadingAnalyze || enriching}
-            >
-              Enrich Full Text (Top {nToExtract})
-            </button>
-            {enriching && (
-              <div className="flex items-center gap-2 text-xs text-neutral-300">
-                <span className="spinner" />
-                Enriching {enrichDone}/{enrichTotal}
-                <button className="btn-xs" onClick={stopEnrich}>Stop</button>
-              </div>
-            )}
             <button
               className="btn-outline"
               type="button"
@@ -1327,15 +1263,7 @@ export default function App() {
                   <a href={a.url} target="_blank" rel="noreferrer noopener" className="title-item mt-1 text-neutral-100 block">{a.title || a.url}</a>
                   <div className="desc-item mt-1 break-words">{a.description || (a.content_excerpt ? a.content_excerpt.slice(0, 240) + (a.content_excerpt.length > 240 ? '…' : '') : '')}</div>
                   <div className="mt-2 flex items-center gap-2">
-                    <button
-                      className="btn-xs"
-                      title="Extract full text for this article to improve analysis."
-                      disabled={enriching}
-                      onClick={() => extractOne(a.url).then(data => { if (data?.textContent) { const excerpt = data.textContent.replace(/\s+/g,' ').slice(0,2000); setArticles(prev => prev.map(x => x.id === a.id ? { ...x, content_excerpt: excerpt, title: x.title || data.title } : x)) } })}
-                    >
-                      Enrich
-                    </button>
-                    {a.content_excerpt && <span className="badge">extracted</span>}
+                    {a.content_excerpt && <span className="badge">excerpt</span>}
                     <a className="btn-xs" href={a.url} target="_blank" rel="noreferrer noopener">Open</a>
                   </div>
                 </div>

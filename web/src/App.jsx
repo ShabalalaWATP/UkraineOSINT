@@ -21,6 +21,7 @@ const SOURCE_KEYS = [
   { id: 'currents', label: 'Currents' },
   { id: 'newsdata', label: 'Newsdata' },
   { id: 'gnews', label: 'GNews' },
+  { id: 'worldnews', label: 'World News' },
   { id: 'rss', label: 'RSS' },
 ]
 

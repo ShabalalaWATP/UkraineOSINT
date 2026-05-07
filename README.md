@@ -11,7 +11,7 @@ Live site
 
 Overview
 - Aggregates Ukraine war reporting by date range and keyword.
-- Pulls from GDELT, The Guardian, Currents, Newsdata, GNews, and curated RSS feeds.
+- Pulls from GDELT, The Guardian, Currents, Newsdata, GNews, World News API, and curated RSS feeds.
 - Deduplicates by canonical URL, filters articles to the requested date range, and reports per-source errors without failing the whole fetch.
 - Sends the selected articles to Gemini for a structured OSINT report with inline citations.
 - Exports reports as Markdown, HTML, DOCX, JSON, CSV, or browser print/PDF.
@@ -27,7 +27,7 @@ How It Works
 
 Repository Structure
 - `server/` - Express API, source connectors, Gemini integration, extraction service, security/rate limiting.
-- `server/src/sources/` - GDELT, Guardian, Currents, Newsdata, GNews, RSS connectors.
+- `server/src/sources/` - GDELT, Guardian, Currents, Newsdata, GNews, World News API, RSS connectors.
 - `server/src/config/geminiModels.js` - Gemini model dropdown/default/fallback configuration.
 - `web/` - React + Vite + Tailwind frontend.
 - `web/.firebaserc` - Firebase project binding: `osint-ukraine-app-2025`.
@@ -70,6 +70,7 @@ GUARDIAN_API_KEY=<optional>
 CURRENTS_API_KEY=<optional>
 NEWSDATA_API_KEY=<optional>
 GNEWS_API_KEY=<optional>
+WORLD_NEWS_API_KEY=<optional>
 ALLOWED_DOMAINS=
 BLOCKED_DOMAINS=
 ```
@@ -92,6 +93,7 @@ News Source Behavior
 - GDELT may be slow to connect, so the server uses a longer upstream connection timeout and a user-agent.
 - Newsdata archive/date searches require a Newsdata plan with archive access.
 - GNews can rate-limit if queried too frequently.
+- World News API uses `WORLD_NEWS_API_KEY` server-side and can return up to 100 results per request.
 - RSS is keyless and acts as a reliable baseline source.
 
 Analysis Enrichment
@@ -135,6 +137,7 @@ GUARDIAN_API_KEY=
 CURRENTS_API_KEY=
 NEWSDATA_API_KEY=
 GNEWS_API_KEY=
+WORLD_NEWS_API_KEY=
 ```
 
 2. Start the API:
@@ -199,7 +202,7 @@ firebase deploy --only hosting
 Main API Endpoints
 - `GET /api/health` - service health.
 - `GET /api/models` - Gemini model list and backend default.
-- `GET /api/articles?start=YYYY-MM-DD&end=YYYY-MM-DD&q=Ukraine&sources=gdelt,guardian,currents,newsdata,gnews,rss&maxPerSource=50&language=en` - aggregate articles.
+- `GET /api/articles?start=YYYY-MM-DD&end=YYYY-MM-DD&q=Ukraine&sources=gdelt,guardian,currents,newsdata,gnews,worldnews,rss&maxPerSource=50&language=en` - aggregate articles.
 - `POST /api/analyze` - generate Gemini OSINT report.
 - `POST /api/extract` - extract one article URL.
 - `POST /api/extract-batch` - extract up to 50 URLs sequentially.
@@ -220,6 +223,7 @@ Troubleshooting
 - Source returns zero articles: check `Source stats` in the UI. A provider may be rate-limited, missing a key, or plan-gated.
 - Newsdata archive error: upgrade Newsdata plan or disable Newsdata in the UI.
 - GNews 429: wait and retry with fewer sources or lower frequency.
+- World News API returns zero articles: confirm `WORLD_NEWS_API_KEY` exists in Render and that the World News plan/quota is active.
 - CORS error: confirm the frontend origin is listed in `server/src/server.js`.
 - No analysis: check `GEMINI_API_KEY` in Render and verify `/api/models`.
 - Wrong model: set `GEMINI_MODEL=gemini-3-flash-preview` in Render or choose a model in the UI dropdown.
@@ -237,6 +241,6 @@ npm run build
 ```
 
 Credits
-- Sources: GDELT, The Guardian, CurrentsAPI, Newsdata.io, GNews, curated RSS feeds.
+- Sources: GDELT, The Guardian, CurrentsAPI, Newsdata.io, GNews, World News API, curated RSS feeds.
 - Readability extraction: `@mozilla/readability`.
 - Created by Alex Orr - GitHub `@ShabalalaWATP`.

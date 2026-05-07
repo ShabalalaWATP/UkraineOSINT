@@ -54,7 +54,7 @@ const analyzeLimiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
 const extractLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
 app.use(generalLimiter);
 
-const SourcesEnum = z.enum(['gdelt', 'guardian', 'currents', 'newsdata', 'gnews', 'rss']);
+const SourcesEnum = z.enum(['gdelt', 'guardian', 'currents', 'newsdata', 'gnews', 'worldnews', 'rss']);
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, version: '0.1.0' });
@@ -83,7 +83,7 @@ app.get('/api/articles', async (req, res) => {
 
     const selectedSources = params.sources
       ? params.sources.split(',').map((s) => s.trim()).filter(Boolean)
-      : ['gdelt', 'guardian', 'currents', 'newsdata', 'gnews', 'rss'];
+      : ['gdelt', 'guardian', 'currents', 'newsdata', 'gnews', 'worldnews', 'rss'];
 
     // Validate selected sources
     selectedSources.forEach((s) => SourcesEnum.parse(s));

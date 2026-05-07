@@ -105,7 +105,7 @@ function sourceProfile(article) {
   if (/bbc/.test(source)) return { host, tier: 'high', note: 'public broadcaster; generally high reliability', weight: 16 };
   if (/isw|understandingwar/.test(source)) return { host, tier: 'analysis', note: 'specialist military analysis; do not treat as direct event reporting unless it cites evidence', weight: 16 };
   if (/kyiv independent/.test(source)) return { host, tier: 'high', note: 'Ukraine-focused outlet; useful local reporting, possible national perspective', weight: 15 };
-  if (/gdelt|gnews|currents|newsdata/.test(source)) return { host, tier: 'aggregated', note: 'aggregated result; assess the linked outlet, not the aggregator', weight: 0 };
+  if (/gdelt|gnews|currents|newsdata|worldnews/.test(source)) return { host, tier: 'aggregated', note: 'aggregated result; assess the linked outlet, not the aggregator', weight: 0 };
   return { host, tier: 'unknown', note: 'unprofiled source; judge cautiously from content and corroboration', weight: 0 };
 }
 

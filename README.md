@@ -18,7 +18,7 @@ Key Features
 - Filters: date range, keyword, source toggles, language; dedup + per‑source stats.
 - Enrich Full Text (Top N): fetch & extract the main text for better analysis.
 - Gemini analysis: Executive Summary, Key Events, Timeline, Thematic Analysis, Claims & Corroboration (Evidence badges, Sources/Outlets counts, UK MI probability yardstick), Outliers/Disinfo, Assessment/Confidence, Gaps, Citations.
-- Current Gemini SDK: `@google/genai`. Default model: `gemini-3-flash-preview`; UI also offers Gemini 3.1 Flash-Lite, Gemini 3.1 Pro Preview, and stable Gemini 2.5 fallbacks.
+- Current Gemini SDK: `@google/genai`. Default model: `gemini-3-flash-preview`; `/api/models` exposes the current text-generation model dropdown for the UI.
 - Markdown renderer: Heading normalization (e.g., “1) …” → “## …”), clickable citations [#n] → Sources, sticky TOC.
 - Timeline: UK‑date labels and histogram of articles/day.
 - Exports: Markdown, HTML, Print to PDF, DOCX, JSON, CSV (all articles / analyzed subset).

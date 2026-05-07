@@ -23,13 +23,14 @@ const SOURCE_KEYS = [
 
 const DEFAULT_MODEL = 'gemini-3-flash-preview'
 const MODEL_OPTIONS = [
-  { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' },
-  { value: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite' },
-  { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
-  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+  { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview', note: 'Latest Flash model; best default for fast OSINT reports.' },
+  { value: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite', note: 'Stable Gemini 3.1 low-latency/cost option.' },
+  { value: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash-Lite Preview', note: 'Preview Flash-Lite endpoint; may have stricter rate limits.' },
+  { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview', note: 'Higher quality for harder synthesis; slower and more expensive.' },
+  { value: 'gemini-flash-latest', label: 'Gemini Flash Latest Alias', note: 'Tracks Google’s latest Flash release; can change over time.' },
+  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: 'Stable fallback with strong price/performance.' },
+  { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite', note: 'Stable economical fallback.' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', note: 'Stable higher-quality fallback.' },
 ]
 
 const QUERY_PRESETS = [
@@ -64,6 +65,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [analysis, setAnalysis] = useState(null)
   const [model, setModel] = useState(DEFAULT_MODEL)
+  const [modelOptions, setModelOptions] = useState(MODEL_OPTIONS)
   const [preset, setPreset] = useState('osint_structured_v1')
   const [focus, setFocus] = useState(defaultFocus)
   const [docLimit, setDocLimit] = useState(30)
@@ -314,6 +316,29 @@ export default function App() {
       initRef.current = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadModels() {
+      try {
+        const data = await fetchJSON('/api/models', {}, 10000)
+        if (cancelled || !Array.isArray(data.models) || data.models.length === 0) return
+        const options = data.models.map(m => ({
+          value: m.id,
+          label: m.label || m.id,
+          note: m.note || '',
+        }))
+        setModelOptions(options)
+        if (data.defaultModel && model === DEFAULT_MODEL && options.some(opt => opt.value === data.defaultModel)) {
+          setModel(data.defaultModel)
+        }
+      } catch {
+        // Older deployed backends do not expose /api/models; keep bundled defaults.
+      }
+    }
+    loadModels()
+    return () => { cancelled = true }
   }, [])
 
   // Sync key UI state to URL + localStorage (debounced)
@@ -891,7 +916,6 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-2 relative">
-            <div className="text-xs text-neutral-400">Local • Dark Mode</div>
             <a
               href="https://github.com/ShabalalaWATP"
               target="_blank"
@@ -967,12 +991,12 @@ export default function App() {
             <div>
               <label className="label">Model</label>
               <select className="input w-full" value={model} onChange={e => setModel(e.target.value)}>
-                {MODEL_OPTIONS.map(opt => (
+                {modelOptions.map(opt => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
               <div className="text-xs text-neutral-500 mt-1">
-                Gemini 3 Flash is the default for current OSINT reports. 3.1 Pro is paid-only and slower; Flash-Lite is cheaper for high volume.
+                {modelOptions.find(opt => opt.value === model)?.note || 'Gemini 3 Flash is the default for current OSINT reports.'}
               </div>
             </div>
           </div>

@@ -21,6 +21,17 @@ const SOURCE_KEYS = [
   { id: 'rss', label: 'RSS' },
 ]
 
+const DEFAULT_MODEL = 'gemini-3-flash-preview'
+const MODEL_OPTIONS = [
+  { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' },
+  { value: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite' },
+  { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
+  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+]
+
 const QUERY_PRESETS = [
   'Ukraine War',
   'Drone attacks Ukraine',
@@ -52,7 +63,7 @@ export default function App() {
   const [stats, setStats] = useState(null)
   const [error, setError] = useState('')
   const [analysis, setAnalysis] = useState(null)
-  const [model, setModel] = useState('gemini-2.5-flash')
+  const [model, setModel] = useState(DEFAULT_MODEL)
   const [preset, setPreset] = useState('osint_structured_v1')
   const [focus, setFocus] = useState(defaultFocus)
   const [docLimit, setDocLimit] = useState(30)
@@ -323,7 +334,7 @@ export default function App() {
         const allSrc = SOURCE_KEYS.map(s => s.id)
         const isAll = sources.length === allSrc.length && allSrc.every(s => sources.includes(s))
         if (!isAll) params.set('sources', sources.join(','))
-        if (model && model !== 'gemini-2.5-flash') params.set('model', model)
+        if (model && model !== DEFAULT_MODEL) params.set('model', model)
         if (preset && preset !== 'osint_structured_v1') params.set('preset', preset)
         if (focus && focus !== defaultFocus) params.set('focus', focus)
         if (docLimit !== 30) params.set('docLimit', String(docLimit))
@@ -466,7 +477,7 @@ export default function App() {
     setLoadingFetch(true); setError(''); setAnalysis(null); setStats(null)
     try {
       const params = new URLSearchParams({ start, end, q, sources: sources.join(','), maxPerSource: '50', language: 'en' })
-      const j = await fetchJSON(`/api/articles?${params.toString()}`, {}, 20000)
+      const j = await fetchJSON(`/api/articles?${params.toString()}`, {}, 60000)
       setArticles(j.articles || [])
       setStats(j.stats || null)
       pushToast(`Fetched ${j.articles?.length || 0} articles`, 'success')
@@ -516,7 +527,7 @@ export default function App() {
     setEnd(defaultEnd)
     setQ('')
     setSources(SOURCE_KEYS.map(s => s.id))
-    setModel('gemini-2.5-flash')
+    setModel(DEFAULT_MODEL)
     setPreset('osint_structured_v1')
     setFocus(defaultFocus)
     setDocLimit(30)
@@ -604,6 +615,7 @@ export default function App() {
       `# OSINT Report: ${q || 'Ukraine'} (${start} → ${end})`,
       `- Model: ${analysis.model}${analysis.fallback ? ' (fallback used)' : ''}`,
       `- Documents analyzed: ${analyzedDocs.length}`,
+      analysis?.usageMetadata?.totalTokenCount ? `- Tokens: ${analysis.usageMetadata.totalTokenCount}` : '',
       `- Focus: ${focus ? focus : '(none)'}`,
       `- Generated: ${new Date().toISOString()}`,
       ''
@@ -955,13 +967,12 @@ export default function App() {
             <div>
               <label className="label">Model</label>
               <select className="input w-full" value={model} onChange={e => setModel(e.target.value)}>
-                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-                <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
-                <option value="gemini-2.5-pro">gemini-2.5-pro</option>
-                <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                {MODEL_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
               </select>
               <div className="text-xs text-neutral-500 mt-1">
-                2.5 Flash: free, balanced speed/quality. 2.5 Flash‑Lite: fastest/cheapest. 2.5 Pro: deeper reasoning (slower). 2.0 Flash: stable backup.
+                Gemini 3 Flash is the default for current OSINT reports. 3.1 Pro is paid-only and slower; Flash-Lite is cheaper for high volume.
               </div>
             </div>
           </div>
@@ -1128,7 +1139,7 @@ export default function App() {
             )}
             {analysis && (
               <div className="max-w-none">
-                <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''} · Focus: {(focus || '(none)')}</div>
+                <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''}{analysis.usageMetadata?.totalTokenCount ? ` · Tokens: ${analysis.usageMetadata.totalTokenCount}` : ''} · Focus: {(focus || '(none)')}</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button className="btn-outline" onClick={copyReport}>{copied ? 'Copied!' : 'Copy Markdown'}</button>
                   <button className="btn-outline" onClick={downloadReport}>{mdSaved ? 'Saved!' : 'Download .md'}</button>
@@ -1329,7 +1340,7 @@ export default function App() {
               )}
               {analysis && (
                 <div className="max-w-none lg:grid lg:grid-cols-[220px_1fr] lg:gap-4">
-                  <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''} · Focus: {(focus || '(none)')}</div>
+                  <div className="text-xs text-neutral-400">Model: {analysis.model}{analysis.fallback ? ' (fallback used)' : ''}{analysis.usageMetadata?.totalTokenCount ? ` · Tokens: ${analysis.usageMetadata.totalTokenCount}` : ''} · Focus: {(focus || '(none)')}</div>
                   <div className="mt-2 flex flex-wrap gap-2 lg:col-span-2">
                     <button className="btn-outline" onClick={copyReport}>{copied ? 'Copied!' : 'Copy Markdown'}</button>
                     <button className="btn-outline" onClick={downloadReport}>{mdSaved ? 'Saved!' : 'Download .md'}</button>

@@ -10,6 +10,7 @@ const { z } = require('zod');
 const { aggregateArticles } = require('./sources/aggregate');
 const { analyzeWithGemini } = require('./services/gemini');
 const { extractFromUrl } = require('./services/extract');
+const { DEFAULT_GEMINI_MODEL, GEMINI_MODELS } = require('./config/geminiModels');
 
 // Load environment variables from server/.env
 dotenv.config();
@@ -57,6 +58,14 @@ const SourcesEnum = z.enum(['gdelt', 'guardian', 'currents', 'newsdata', 'gnews'
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, version: '0.1.0' });
+});
+
+app.get('/api/models', (_req, res) => {
+  res.json({
+    ok: true,
+    defaultModel: DEFAULT_GEMINI_MODEL,
+    models: GEMINI_MODELS,
+  });
 });
 
 app.get('/api/articles', async (req, res) => {
@@ -117,7 +126,7 @@ app.post('/api/analyze', analyzeLimiter, async (req, res) => {
           lang: z.string().optional(),
         })
       ),
-      model: z.string().default('gemini-1.5-flash'),
+      model: z.string().default(DEFAULT_GEMINI_MODEL),
       maxDocs: z.coerce.number().int().min(5).max(120).default(60),
     });
 

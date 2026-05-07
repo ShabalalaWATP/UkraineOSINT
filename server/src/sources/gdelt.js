@@ -11,7 +11,7 @@ async function fetchGdelt({ start, end, q, maxPerSource }) {
     maxrecords: String(Math.min(maxPerSource || 100, 250)),
   });
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?${qs.toString()}`;
-  const data = await fetchJson(url, { timeoutMs: 12000 });
+  const data = await fetchJson(url, { timeoutMs: 25000 });
   const items = (data.articles || []).map((a) => ({
     id: idFromUrl(a.url),
     source: 'gdelt',

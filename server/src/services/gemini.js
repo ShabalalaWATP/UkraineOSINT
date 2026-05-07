@@ -1,4 +1,27 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenAI } = require('@google/genai');
+const { DEFAULT_GEMINI_MODEL, GEMINI_FALLBACK_MODELS } = require('../config/geminiModels');
+
+function createGeminiClient() {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error('Missing GEMINI_API_KEY');
+  }
+  return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+}
+
+function textFromResponse(response) {
+  if (typeof response?.text === 'string') return response.text;
+  const parts = response?.candidates?.[0]?.content?.parts || [];
+  return parts.map((part) => part.text || '').join('');
+}
+
+function mergeUsageMetadata(total, next) {
+  if (!next) return total;
+  const out = { ...total };
+  for (const [key, value] of Object.entries(next)) {
+    if (typeof value === 'number') out[key] = (out[key] || 0) + value;
+  }
+  return out;
+}
 
 function chunkArticles(articles, maxCharsPerChunk = 12000, maxDocs = 60) {
   const docs = articles.slice(0, maxDocs).map((a, idx) => {
@@ -78,8 +101,8 @@ function buildOsintStructuredPrompt({ start, end, q, focus }) {
   return `${header}\n\n${scope}\n${intent}\n\n${focusDirective}\n\n${format}\n\n${rules}`;
 }
 
-async function analyzeWithGemini({ start, end, q, focus = '', promptPreset = 'osint_structured_v1', articles, model = 'gemini-1.5-flash', maxDocs = 60 }) {
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+async function analyzeWithGemini({ start, end, q, focus = '', promptPreset = 'osint_structured_v1', articles, model = DEFAULT_GEMINI_MODEL, maxDocs = 60 }) {
+  const ai = createGeminiClient();
 
   let system;
   if (promptPreset === 'osint_structured_v1') {
@@ -91,41 +114,54 @@ async function analyzeWithGemini({ start, end, q, focus = '', promptPreset = 'os
   const chunks = chunkArticles(articles, 12000, maxDocs);
 
   async function runWithModel(useModel) {
-    const client = genAI.getGenerativeModel({ model: useModel });
     const parts = [];
+    let usageMetadata = {};
     for (let i = 0; i < chunks.length; i++) {
       const prefix = chunks.length > 1 ? `Part ${i + 1}/${chunks.length}. ` : '';
       const instructions = `${prefix}You will receive a subset of the documents with IDs. Read and produce partial analysis notes that strictly follow the requested structure and include inline citations [#n]. Do not repeat the full documents.\n\nAnalyst focus: ${focus || '(none provided)'}\nIn your notes, prioritize items relevant to the focus and explicitly mention them where appropriate.\nFor each claim, include: an Evidence badge (\`Single-source\`/\`Multi-source\`/\`Contested\`), Sources & Outlets counts, and a Likelihood using the UK MI yardstick terms.`;
       const user = `Documents:\n\n${chunks[i]}`;
-      const res = await client.generateContent([{ text: system }, { text: instructions }, { text: user }]);
-      const text = res?.response?.text?.() || '';
+      const res = await ai.models.generateContent({
+        model: useModel,
+        contents: `${instructions}\n\n${user}`,
+        config: {
+          systemInstruction: system,
+          temperature: 0.2,
+        },
+      });
+      usageMetadata = mergeUsageMetadata(usageMetadata, res?.usageMetadata);
+      const text = textFromResponse(res);
       parts.push(text);
     }
     let synthesis = parts.join('\n\n');
     if (parts.length > 1) {
-      const res = await client.generateContent([
-        { text: system },
-        { text: `Synthesize the partial analyses into ONE cohesive report following the exact section ordering and formatting rules. Merge and deduplicate content; keep inline citations [#n] intact and comprehensive. Ensure the analyst focus is clearly addressed throughout (especially in the Executive Summary and Thematic Analysis). For Claims and Corroboration, make sure each claim shows: Evidence badge, Sources & Outlets counts, and Likelihood using the UK MI yardstick. Analyst focus: ${focus || '(none provided)'}` },
-        { text: synthesis },
-      ]);
-      synthesis = res?.response?.text?.() || synthesis;
+      const res = await ai.models.generateContent({
+        model: useModel,
+        contents: `Synthesize the partial analyses into ONE cohesive report following the exact section ordering and formatting rules. Merge and deduplicate content; keep inline citations [#n] intact and comprehensive. Ensure the analyst focus is clearly addressed throughout (especially in the Executive Summary and Thematic Analysis). For Claims and Corroboration, make sure each claim shows: Evidence badge, Sources & Outlets counts, and Likelihood using the UK MI yardstick. Analyst focus: ${focus || '(none provided)'}\n\n${synthesis}`,
+        config: {
+          systemInstruction: system,
+          temperature: 0.2,
+        },
+      });
+      usageMetadata = mergeUsageMetadata(usageMetadata, res?.usageMetadata);
+      synthesis = textFromResponse(res) || synthesis;
     }
-    return { report: synthesis, chunks: chunks.length };
+    return { report: synthesis, chunks: chunks.length, usageMetadata };
   }
 
   let usedModel = model;
   let report = '';
   let chunkCount = chunks.length;
   let fallback = null;
-  const fallbacks = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-pro', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'];
+  let usageMetadata = {};
   // Ensure we try the requested model first, then fallback chain (skipping duplicates)
-  const chain = [usedModel, ...fallbacks.filter(m => m !== usedModel)];
+  const chain = [usedModel, ...GEMINI_FALLBACK_MODELS.filter(m => m !== usedModel)];
   let lastErr = null;
   for (const m of chain) {
     try {
       const out = await runWithModel(m);
       usedModel = m;
       report = out.report; chunkCount = out.chunks;
+      usageMetadata = out.usageMetadata || {};
       break;
     } catch (err) {
       lastErr = err;
@@ -143,6 +179,7 @@ async function analyzeWithGemini({ start, end, q, focus = '', promptPreset = 'os
     promptPreset,
     chunks: chunkCount,
     report,
+    usageMetadata,
     fallback,
   };
 }

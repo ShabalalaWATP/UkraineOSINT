@@ -11,9 +11,10 @@ async function fetchNewsdata({ start, end, q, maxPerSource, language }) {
     from_date: ymd(start),
     to_date: ymd(end),
     language: language || 'en',
+    size: String(Math.min(maxPerSource || 10, 50)),
     page: '1'
   });
-  const url = `https://newsdata.io/api/1/news?${qs.toString()}`;
+  const url = `https://newsdata.io/api/1/archive?${qs.toString()}`;
   const data = await fetchJson(url, { timeoutMs: 12000 });
   const results = data?.results || [];
   return results.slice(0, Math.min(maxPerSource || 100, 100)).map((it) => ({

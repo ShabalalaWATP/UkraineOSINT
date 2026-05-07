@@ -6,6 +6,18 @@ const { fetchGnews } = require('./gnews');
 const { fetchRss } = require('./rss');
 const { idFromUrl, canonicalizeUrl } = require('../utils/url');
 
+function isWithinDateRange(article, start, end) {
+  if (!start || !end) return true;
+  const published = new Date(article.published_at);
+  if (Number.isNaN(published.getTime())) return false;
+
+  const startAt = new Date(`${start}T00:00:00Z`);
+  const endAt = new Date(`${end}T23:59:59.999Z`);
+  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) return true;
+
+  return published >= startAt && published <= endAt;
+}
+
 async function aggregateArticles({ start, end, q, sources, maxPerSource, language }) {
   const tasks = [];
   const add = (fn, name) => {
@@ -25,7 +37,17 @@ async function aggregateArticles({ start, end, q, sources, maxPerSource, languag
   if (sources.includes('rss')) add(fetchRss, 'rss');
 
   const results = await Promise.all(tasks);
-  let all = results.flatMap(r => r.list || []);
+  const filteredResults = results.map((r) => {
+    const rawList = r.list || [];
+    const list = rawList.filter((article) => isWithinDateRange(article, start, end));
+    return {
+      ...r,
+      list,
+      rawCount: rawList.length,
+      filteredOut: rawList.length - list.length,
+    };
+  });
+  let all = filteredResults.flatMap(r => r.list || []);
 
   // Optional domain allow/block lists via environment
   const blocked = (process.env.BLOCKED_DOMAINS || '')
@@ -55,9 +77,11 @@ async function aggregateArticles({ start, end, q, sources, maxPerSource, languag
   const deduped = Array.from(map.values())
     .sort((a, b) => (new Date(b.published_at) - new Date(a.published_at)));
 
-  const stats = results.map(r => ({
+  const stats = filteredResults.map(r => ({
     source: r.name,
     count: r.list?.length || 0,
+    rawCount: r.rawCount || 0,
+    filteredOut: r.filteredOut || 0,
     ms: r.ms || 0,
     error: r.error || null,
   }));

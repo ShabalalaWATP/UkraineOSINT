@@ -10,7 +10,7 @@ Live Site
 
 Overview
 - Aggregates Ukraine war reporting by date range and keyword from multiple sources, deduplicates, and synthesizes a structured OSINT report with inline citations using Gemini.
-- Stack: Node.js (Express) API + React (Vite + Tailwind) UI. Runs locally or in the cloud (free) via Firebase Hosting (frontend) + Render (backend).
+- Stack: Node.js (Express) API + React (Vite + Tailwind) UI. Runs locally or in the cloud via Firebase Hosting (frontend) + Render (backend).
 - Secrets are environment variables. Never commit API keys.
 
 Key Features
@@ -18,6 +18,7 @@ Key Features
 - Filters: date range, keyword, source toggles, language; dedup + per‑source stats.
 - Enrich Full Text (Top N): fetch & extract the main text for better analysis.
 - Gemini analysis: Executive Summary, Key Events, Timeline, Thematic Analysis, Claims & Corroboration (Evidence badges, Sources/Outlets counts, UK MI probability yardstick), Outliers/Disinfo, Assessment/Confidence, Gaps, Citations.
+- Current Gemini SDK: `@google/genai`. Default model: `gemini-3-flash-preview`; UI also offers Gemini 3.1 Flash-Lite, Gemini 3.1 Pro Preview, and stable Gemini 2.5 fallbacks.
 - Markdown renderer: Heading normalization (e.g., “1) …” → “## …”), clickable citations [#n] → Sources, sticky TOC.
 - Timeline: UK‑date labels and histogram of articles/day.
 - Exports: Markdown, HTML, Print to PDF, DOCX, JSON, CSV (all articles / analyzed subset).
@@ -53,7 +54,15 @@ Local Development
   - `HOST=127.0.0.1`
   - `PORT=55001` (matches Vite dev proxy by default)
   - `GEMINI_API_KEY=...`
+  - Optional: `GEMINI_MODEL=gemini-3.1-flash-lite` (or another model if you want to override the server default)
   - Optional: `GUARDIAN_API_KEY`, `CURRENTS_API_KEY`, `GNEWS_API_KEY`, `NEWSDATA_API_KEY`
+
+Gemini paid tier setup
+- No code change is needed to switch from free to paid Gemini API usage. Create or choose a Google AI Studio API key whose Google Cloud project has Gemini API billing enabled, then set that key as `GEMINI_API_KEY`.
+- In Google AI Studio, open **API keys / Billing**, click **Set up billing** for the project, and complete the Cloud Billing or Prepay flow. The API key inherits the billing tier from its project; keys do not have independent billing settings.
+- Paid usage is billed by tokens. This app now returns and displays `usageMetadata.totalTokenCount` after analysis so you can sanity-check usage per report.
+- For Render, set `GEMINI_API_KEY` in the server service Environment tab and redeploy. Do not set Gemini keys in Firebase, Vite, `web/.env`, or GitHub Actions unless they are backend-only secrets.
+- Recommended safeguards: restrict the API key to the Generative Language/Gemini API where possible, rotate any old key that may have been exposed, and add Google Cloud billing alerts/budgets before using paid Pro models.
 
 2) Start the API (terminal 1)
 - `cd server`
@@ -87,6 +96,7 @@ Backend: Render (Web Service)
 3) Environment:
 - `HOST=0.0.0.0`
 - `GEMINI_API_KEY=...` (+ optional Guardian/Currents/GNews/Newsdata)
+- Optional: `GEMINI_MODEL=gemini-3-flash-preview`
 - Optional allow/block:
   - `ALLOWED_DOMAINS=bbc.co.uk,bbc.com,dw.com,kyivindependent.com,understandingwar.org,reuters.com,apnews.com,theguardian.com`
   - `BLOCKED_DOMAINS=zerohedge.com,freerepublic.com` (use either allowlist or blocklist)
@@ -114,6 +124,7 @@ Screenshots
 Troubleshooting
 - Raw Markdown visible on site: hard refresh (Ctrl+F5). The app normalizes headings like `1) Executive Summary` → proper Markdown.
 - Timeout on Analyze: client timeout is 5 minutes; server timeouts increased. Try fewer docs or a faster model; “Enrich Full Text” improves quality.
+- Timeout on Fetch: the backend may cold-start on Render. The UI allows up to 60 seconds for article fetches; retry once if Render was asleep.
 - CORS “Not allowed”: confirm Hosting URL matches the allowlist in `server/src/server.js`.
 - No analysis: ensure `GEMINI_API_KEY` is set on Render.
 - Unwanted sources: set `ALLOWED_DOMAINS` or `BLOCKED_DOMAINS` in Render environment.
@@ -123,4 +134,3 @@ Credits
 - Readability extraction: @mozilla/readability.
 
 Created by Alex Orr — GitHub @ShabalalaWATP
-

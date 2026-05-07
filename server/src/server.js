@@ -127,7 +127,7 @@ app.post('/api/analyze', analyzeLimiter, async (req, res) => {
         })
       ),
       model: z.string().default(DEFAULT_GEMINI_MODEL),
-      maxDocs: z.coerce.number().int().min(5).max(120).default(60),
+      maxDocs: z.coerce.number().int().min(1).max(120).default(40),
     });
 
     const body = schema.parse(req.body);

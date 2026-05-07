@@ -1,6 +1,10 @@
 const { GoogleGenAI } = require('@google/genai');
 const { DEFAULT_GEMINI_MODEL, GEMINI_FALLBACK_MODELS } = require('../config/geminiModels');
 
+const MAX_DOCS_PER_ANALYSIS = Number(process.env.MAX_ANALYSIS_DOCS) || 40;
+const MAX_CHARS_PER_CHUNK = Number(process.env.GEMINI_CHUNK_CHAR_LIMIT) || 60000;
+const MAX_EXCERPT_CHARS = Number(process.env.GEMINI_EXCERPT_CHARS) || 700;
+
 function createGeminiClient() {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error('Missing GEMINI_API_KEY');
@@ -23,10 +27,10 @@ function mergeUsageMetadata(total, next) {
   return out;
 }
 
-function chunkArticles(articles, maxCharsPerChunk = 12000, maxDocs = 60) {
+function chunkArticles(articles, maxCharsPerChunk = MAX_CHARS_PER_CHUNK, maxDocs = MAX_DOCS_PER_ANALYSIS) {
   const docs = articles.slice(0, maxDocs).map((a, idx) => {
     const n = idx + 1;
-    const excerpt = (a.content_excerpt || a.description || a.title || '').replace(/\s+/g, ' ').slice(0, 1200);
+    const excerpt = (a.content_excerpt || a.description || a.title || '').replace(/\s+/g, ' ').slice(0, MAX_EXCERPT_CHARS);
     let host = '';
     try { host = new URL(a.url).hostname; } catch {}
     return `[#${n}] ${a.title || '(no title)'}\nOutlet: ${host || a.source}\nDate: ${a.published_at}\nURL: ${a.url}\nExcerpt: ${excerpt}`;
@@ -103,6 +107,7 @@ function buildOsintStructuredPrompt({ start, end, q, focus }) {
 
 async function analyzeWithGemini({ start, end, q, focus = '', promptPreset = 'osint_structured_v1', articles, model = DEFAULT_GEMINI_MODEL, maxDocs = 60 }) {
   const ai = createGeminiClient();
+  const docCount = Math.max(1, Math.min(MAX_DOCS_PER_ANALYSIS, Number(maxDocs) || MAX_DOCS_PER_ANALYSIS, articles.length));
 
   let system;
   if (promptPreset === 'osint_structured_v1') {
@@ -111,7 +116,7 @@ async function analyzeWithGemini({ start, end, q, focus = '', promptPreset = 'os
     system = `You are an analyst. Summarize documents for ${q} from ${start} to ${end} with citations like [#n].`;
   }
 
-  const chunks = chunkArticles(articles, 12000, maxDocs);
+  const chunks = chunkArticles(articles, MAX_CHARS_PER_CHUNK, docCount);
 
   async function runWithModel(useModel) {
     const parts = [];
@@ -177,6 +182,7 @@ async function analyzeWithGemini({ start, end, q, focus = '', promptPreset = 'os
     q,
     focus,
     promptPreset,
+    docCount,
     chunks: chunkCount,
     report,
     usageMetadata,

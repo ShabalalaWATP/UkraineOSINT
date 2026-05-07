@@ -6,6 +6,8 @@ import remarkGfm from 'remark-gfm'
 // If building for static hosting, set VITE_API_BASE to your deployed API host, e.g.
 //   VITE_API_BASE = "https://your-api.onrender.com"
 const API_BASE = import.meta.env.VITE_API_BASE || ''
+const DEFAULT_DOC_LIMIT = 20
+const MAX_ANALYSIS_DOCS = 40
 
 const defaultStart = new Date(Date.now() - 6 * 24 * 3600 * 1000)
   .toISOString().slice(0, 10)
@@ -68,7 +70,7 @@ export default function App() {
   const [modelOptions, setModelOptions] = useState(MODEL_OPTIONS)
   const [preset, setPreset] = useState('osint_structured_v1')
   const [focus, setFocus] = useState(defaultFocus)
-  const [docLimit, setDocLimit] = useState(30)
+  const [docLimit, setDocLimit] = useState(DEFAULT_DOC_LIMIT)
   const [showLimit, setShowLimit] = useState(60)
   const [analysisOnTop, setAnalysisOnTop] = useState(true)
   const [analyzedDocs, setAnalyzedDocs] = useState([])
@@ -293,7 +295,7 @@ export default function App() {
       if (params.get('model')) urlPatch.model = params.get('model')
       if (params.get('preset')) urlPatch.preset = params.get('preset')
       if (params.get('focus')) urlPatch.focus = params.get('focus')
-      if (params.get('docLimit')) urlPatch.docLimit = toInt(params.get('docLimit'), 30)
+      if (params.get('docLimit')) urlPatch.docLimit = toInt(params.get('docLimit'), DEFAULT_DOC_LIMIT)
       if (params.get('showLimit')) urlPatch.showLimit = toInt(params.get('showLimit'), 60)
       if (params.get('analysisOnTop')) urlPatch.analysisOnTop = toBool(params.get('analysisOnTop'), true)
 
@@ -362,7 +364,7 @@ export default function App() {
         if (model && model !== DEFAULT_MODEL) params.set('model', model)
         if (preset && preset !== 'osint_structured_v1') params.set('preset', preset)
         if (focus && focus !== defaultFocus) params.set('focus', focus)
-        if (docLimit !== 30) params.set('docLimit', String(docLimit))
+        if (docLimit !== DEFAULT_DOC_LIMIT) params.set('docLimit', String(docLimit))
         if (showLimit !== 60) params.set('showLimit', String(showLimit))
         if (analysisOnTop !== true) params.set('analysisOnTop', analysisOnTop ? '1' : '0')
 
@@ -474,7 +476,10 @@ export default function App() {
     try {
       const fullUrl = (API_BASE && url.startsWith('/api')) ? (API_BASE.replace(/\/$/, '') + url) : url
       const res = await fetch(fullUrl, { ...opts, signal: controller.signal })
-      const data = await res.json()
+      const contentType = res.headers.get('content-type') || ''
+      const data = contentType.includes('application/json')
+        ? await res.json()
+        : { ok: false, error: (await res.text()).replace(/\s+/g, ' ').trim().slice(0, 240) }
       if (!res.ok || data?.ok === false) {
         throw new Error(data?.error || `HTTP ${res.status}`)
       }
@@ -483,6 +488,9 @@ export default function App() {
       if (e?.name === 'AbortError') {
         const secs = Math.round(timeoutMs / 1000)
         throw new Error(`Request timed out after ${secs}s`)
+      }
+      if (e instanceof TypeError) {
+        throw new Error('Connection closed before the API returned. Try fewer documents, then retry.')
       }
       throw e
     } finally {
@@ -518,14 +526,16 @@ export default function App() {
   async function runAnalysis() {
     setLoadingAnalyze(true); setError('')
     try {
-      const toAnalyze = articles.slice(0, Math.max(5, Math.min(120, Number(docLimit) || 40)))
+      const requestedDocs = Math.max(1, Math.min(MAX_ANALYSIS_DOCS, Number(docLimit) || DEFAULT_DOC_LIMIT))
+      const toAnalyze = articles.slice(0, requestedDocs)
       const payload = { start, end, q, model, promptPreset: preset, focus, maxDocs: toAnalyze.length, articles: toAnalyze }
       // Increase timeout to 5 minutes for large analyses / slower models
       const j = await fetchJSON('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 300000)
       setAnalysis(j.analysis)
-      setAnalyzedDocs(toAnalyze)
-      pushToast('Analysis completed', 'success')
-      setLastAnalyze({ docs: toAnalyze.length, at: Date.now(), model })
+      const analyzed = toAnalyze.slice(0, j.analysis?.docCount || toAnalyze.length)
+      setAnalyzedDocs(analyzed)
+      pushToast(`Analysis completed (${analyzed.length} docs)`, 'success')
+      setLastAnalyze({ docs: analyzed.length, at: Date.now(), model })
     } catch (e) {
       setError(e.message)
       pushToast(`Analysis failed: ${e.message}`, 'error')
@@ -555,7 +565,7 @@ export default function App() {
     setModel(DEFAULT_MODEL)
     setPreset('osint_structured_v1')
     setFocus(defaultFocus)
-    setDocLimit(30)
+    setDocLimit(DEFAULT_DOC_LIMIT)
     setShowLimit(60)
     setAnalysisOnTop(true)
     clearOutput()
@@ -574,7 +584,7 @@ export default function App() {
   }
 
   async function extractForTopN() {
-    const n = Math.max(5, Math.min(120, Number(docLimit) || 30))
+    const n = Math.max(1, Math.min(MAX_ANALYSIS_DOCS, Number(docLimit) || DEFAULT_DOC_LIMIT))
     const targets = articles.slice(0, n)
     if (!targets.length) return
     setEnriching(true)
@@ -632,7 +642,8 @@ export default function App() {
     URL.revokeObjectURL(url)
   }
 
-  const nToExtract = useMemo(() => Math.max(5, Math.min(120, Number(docLimit) || 30)), [docLimit])
+  const nToAnalyze = useMemo(() => Math.min(articles.length, Math.max(1, Math.min(MAX_ANALYSIS_DOCS, Number(docLimit) || DEFAULT_DOC_LIMIT))), [articles.length, docLimit])
+  const nToExtract = useMemo(() => Math.max(1, Math.min(MAX_ANALYSIS_DOCS, Number(docLimit) || DEFAULT_DOC_LIMIT)), [docLimit])
 
   function buildExportMarkdown() {
     if (!analysis) return ''
@@ -954,7 +965,7 @@ export default function App() {
               </button>
               <button className="btn-neon" onClick={runAnalysis} disabled={loadingAnalyze || loadingFetch || enriching || articles.length === 0}>
                 {loadingAnalyze ? <span className="spinner" /> : null}
-                {loadingAnalyze ? 'Analyzing…' : `Analyze (${Math.min(articles.length, Math.max(5, Math.min(120, Number(docLimit) || 40)))})`}
+                {loadingAnalyze ? 'Analyzing…' : `Analyze (${nToAnalyze})`}
               </button>
             </div>
             <div className="flex items-center gap-2 ml-auto">
@@ -1035,8 +1046,8 @@ export default function App() {
               </select>
             </div>
             <div>
-              <label className="label">Docs to Analyze (5–120)</label>
-              <input type="number" min={5} max={120} className="input w-full" value={docLimit} onChange={e => setDocLimit(e.target.value)} />
+              <label className="label">Docs to Analyze (1–40)</label>
+              <input type="number" min={1} max={MAX_ANALYSIS_DOCS} className="input w-full" value={docLimit} onChange={e => setDocLimit(e.target.value)} />
             </div>
             <div>
               <label className="label">Show Articles (UI)</label>
@@ -1054,7 +1065,7 @@ export default function App() {
                 </button>
                 <button className="btn-neon" onClick={runAnalysis} disabled={loadingAnalyze || loadingFetch || articles.length === 0}>
                   {loadingAnalyze ? <span className="spinner" /> : null}
-                  {loadingAnalyze ? 'Analyzing…' : `Analyze (${Math.min(articles.length, Math.max(5, Math.min(120, Number(docLimit) || 40)))})`}
+                  {loadingAnalyze ? 'Analyzing…' : `Analyze (${nToAnalyze})`}
                 </button>
               </div>
             </div>

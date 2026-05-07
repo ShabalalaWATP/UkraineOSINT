@@ -11,7 +11,7 @@ Live site
 
 Overview
 - Aggregates Ukraine war reporting by date range and keyword.
-- Pulls from GDELT, The Guardian, Currents, GNews, NewsAPI.org, World News API, and curated RSS feeds.
+- Pulls from GDELT, The Guardian, Currents, GNews, NewsAPI.org, Webz.io News API Lite, and curated RSS feeds.
 - Deduplicates by canonical URL, filters articles to the requested date range, and reports per-source errors without failing the whole fetch.
 - Sends the selected articles to Gemini for a structured OSINT report with inline citations.
 - Exports reports as Markdown, HTML, DOCX, JSON, CSV, or browser print/PDF.
@@ -27,7 +27,7 @@ How It Works
 
 Repository Structure
 - `server/` - Express API, source connectors, Gemini integration, extraction service, security/rate limiting.
-- `server/src/sources/` - GDELT, Guardian, Currents, GNews, NewsAPI.org, World News API, RSS connectors.
+- `server/src/sources/` - GDELT, Guardian, Currents, GNews, NewsAPI.org, Webz.io News API Lite, RSS connectors.
 - `server/src/config/geminiModels.js` - Gemini model dropdown/default/fallback configuration.
 - `web/` - React + Vite + Tailwind frontend.
 - `web/.firebaserc` - Firebase project binding: `osint-ukraine-app-2025`.
@@ -70,7 +70,7 @@ GUARDIAN_API_KEY=<optional>
 CURRENTS_API_KEY=<optional>
 GNEWS_API_KEY=<optional>
 NEWS_API_KEY=<optional>
-WORLD_NEWS_API_KEY=<optional>
+WEBZ_API_KEY=<optional>
 ALLOWED_DOMAINS=
 BLOCKED_DOMAINS=
 ```
@@ -93,7 +93,7 @@ News Source Behavior
 - GDELT may be slow to connect, so the server uses a longer upstream connection timeout and a user-agent.
 - GNews can rate-limit if queried too frequently.
 - NewsAPI.org uses `NEWS_API_KEY` server-side, searches `/v2/everything`, and returns up to 100 results per request.
-- World News API uses `WORLD_NEWS_API_KEY` server-side and can return up to 100 results per request.
+- Webz.io News API Lite uses `WEBZ_API_KEY` server-side, searches `newsApiLite`, supports up to 30 days of history, and returns up to 10 articles per call.
 - RSS is keyless and acts as a reliable baseline source.
 
 Analysis Enrichment
@@ -137,7 +137,7 @@ GUARDIAN_API_KEY=
 CURRENTS_API_KEY=
 GNEWS_API_KEY=
 NEWS_API_KEY=
-WORLD_NEWS_API_KEY=
+WEBZ_API_KEY=
 ```
 
 2. Start the API:
@@ -202,7 +202,7 @@ firebase deploy --only hosting
 Main API Endpoints
 - `GET /api/health` - service health.
 - `GET /api/models` - Gemini model list and backend default.
-- `GET /api/articles?start=YYYY-MM-DD&end=YYYY-MM-DD&q=Ukraine&sources=gdelt,guardian,currents,gnews,newsapi,worldnews,rss&maxPerSource=50&language=en` - aggregate articles.
+- `GET /api/articles?start=YYYY-MM-DD&end=YYYY-MM-DD&q=Ukraine&sources=gdelt,guardian,currents,gnews,newsapi,webz,rss&maxPerSource=50&language=en` - aggregate articles.
 - `POST /api/analyze` - generate Gemini OSINT report.
 - `POST /api/extract` - extract one article URL.
 - `POST /api/extract-batch` - extract up to 50 URLs sequentially.
@@ -223,7 +223,7 @@ Troubleshooting
 - Source returns zero articles: check `Source stats` in the UI. A provider may be rate-limited, missing a key, or plan-gated.
 - GNews 429: wait and retry with fewer sources or lower frequency.
 - NewsAPI.org returns zero articles: confirm `NEWS_API_KEY` exists in Render and that the requested date range is allowed by the NewsAPI.org plan.
-- World News API returns zero articles: confirm `WORLD_NEWS_API_KEY` exists in Render and that the World News plan/quota is active.
+- Webz.io returns zero articles: confirm `WEBZ_API_KEY` exists in Render and that the requested date range is within the Lite plan's 30-day history window.
 - CORS error: confirm the frontend origin is listed in `server/src/server.js`.
 - No analysis: check `GEMINI_API_KEY` in Render and verify `/api/models`.
 - Wrong model: set `GEMINI_MODEL=gemini-3-flash-preview` in Render or choose a model in the UI dropdown.
@@ -241,6 +241,6 @@ npm run build
 ```
 
 Credits
-- Sources: GDELT, The Guardian, CurrentsAPI, GNews, NewsAPI.org, World News API, curated RSS feeds.
+- Sources: GDELT, The Guardian, CurrentsAPI, GNews, NewsAPI.org, Webz.io News API Lite, curated RSS feeds.
 - Readability extraction: `@mozilla/readability`.
 - Created by Alex Orr - GitHub `@ShabalalaWATP`.

@@ -21,7 +21,7 @@ const SOURCE_KEYS = [
   { id: 'currents', label: 'Currents' },
   { id: 'gnews', label: 'GNews' },
   { id: 'newsapi', label: 'NewsAPI' },
-  { id: 'worldnews', label: 'World News' },
+  { id: 'webz', label: 'Webz.io' },
   { id: 'rss', label: 'RSS' },
 ]
 

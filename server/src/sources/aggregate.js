@@ -3,7 +3,7 @@ const { fetchGuardian } = require('./guardian');
 const { fetchCurrents } = require('./currents');
 const { fetchGnews } = require('./gnews');
 const { fetchNewsApi } = require('./newsapi');
-const { fetchWorldNews } = require('./worldnews');
+const { fetchWebz } = require('./webz');
 const { fetchRss } = require('./rss');
 const { idFromUrl, canonicalizeUrl } = require('../utils/url');
 
@@ -35,7 +35,7 @@ async function aggregateArticles({ start, end, q, sources, maxPerSource, languag
   if (sources.includes('currents')) add(fetchCurrents, 'currents');
   if (sources.includes('gnews')) add(fetchGnews, 'gnews');
   if (sources.includes('newsapi')) add(fetchNewsApi, 'newsapi');
-  if (sources.includes('worldnews')) add(fetchWorldNews, 'worldnews');
+  if (sources.includes('webz')) add(fetchWebz, 'webz');
   if (sources.includes('rss')) add(fetchRss, 'rss');
 
   const results = await Promise.all(tasks);
